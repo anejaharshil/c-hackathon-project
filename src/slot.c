@@ -5,12 +5,33 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Zone-to-user-category mapping (documented):
+ *   ZONE_A         : general parking (students / staff)
+ *   ZONE_B         : general parking (staff)
+ *   ZONE_C         : general parking (students)
+ *   ZONE_ACCESSIBLE: accessible / mobility-impaired users ONLY.
+ *                    Never handed out as general overflow.
+ *   ZONE_VISITOR   : visitor parking.
+ *
+ * slot_init distributes slots round-robin across these zones so every zone
+ * is represented. slot_find_free matches the requested zone exactly and never
+ * falls back to another zone, so accessible parking is not silently consumed
+ * by general demand.
+ */
+static const ZoneType ZONE_ORDER[5] = {
+    ZONE_A, ZONE_B, ZONE_C, ZONE_ACCESSIBLE, ZONE_VISITOR
+};
+
 Status slot_init(ParkingSystem *sys, int capacity) {
     if (sys == NULL || capacity <= 0) {
         return STATUS_INVALID_ARGUMENT;
     }
+    /* Free any previously allocated slots so re-initialisation cannot leak. */
+    free(sys->slots);
     sys->slots = calloc((size_t)capacity, sizeof(ParkingSlot));
     if (sys->slots == NULL) {
+        sys->slot_count = 0;
+        sys->slot_capacity = 0;
         return STATUS_OUT_OF_MEMORY;
     }
     sys->slot_count = (size_t)capacity;
@@ -19,8 +40,9 @@ Status slot_init(ParkingSystem *sys, int capacity) {
     for (int i = 0; i < capacity; i++) {
         ParkingSlot *s = &sys->slots[i];
         s->id = system_next_id(sys, "slot");
-        s->zone = ZONE_A;
-        snprintf(s->location, sizeof(s->location), "Slot %d", i + 1);
+        s->zone = ZONE_ORDER[i % 5];
+        snprintf(s->location, sizeof(s->location), "Zone %c-%d",
+                 'A' + (i % 5), i + 1);
         s->is_available = 1;
         s->vehicle_id = ID_NONE;
     }
@@ -68,6 +90,9 @@ Status slot_occupy(ParkingSystem *sys, size_t index, Id vehicle_id) {
 Status slot_release(ParkingSystem *sys, size_t index) {
     if (sys == NULL || index >= sys->slot_count) {
         return STATUS_INVALID_ARGUMENT;
+    }
+    if (sys->slots[index].is_available) {
+        return STATUS_CONFLICT;
     }
     sys->slots[index].is_available = 1;
     sys->slots[index].vehicle_id = ID_NONE;
