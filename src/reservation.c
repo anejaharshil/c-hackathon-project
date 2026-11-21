@@ -11,7 +11,10 @@ static int overlaps(time_t a_start, time_t a_end, time_t b_start, time_t b_end) 
 
 Status reservation_create(ParkingSystem *sys, Id vehicle_id, Id slot_id,
                           time_t start_time, time_t end_time, Id *out_id) {
-    if (sys == NULL || out_id == NULL || end_time <= start_time) {
+    if (sys == NULL || out_id == NULL) {
+        return STATUS_INVALID_ARGUMENT;
+    }
+    if (start_time < 0 || end_time < 0 || end_time <= start_time) {
         return STATUS_INVALID_ARGUMENT;
     }
 
@@ -24,7 +27,7 @@ Status reservation_create(ParkingSystem *sys, Id vehicle_id, Id slot_id,
         return STATUS_NOT_FOUND;
     }
 
-    /* No overlapping reservations for the same slot. */
+    /* No overlapping reservations for the same slot (excluding cancelled). */
     for (size_t i = 0; i < sys->reservation_count; i++) {
         Reservation *r = &sys->reservations[i];
         if (r->slot_id == slot_id && r->status != RESERVATION_CANCELLED &&
@@ -33,9 +36,15 @@ Status reservation_create(ParkingSystem *sys, Id vehicle_id, Id slot_id,
         }
     }
 
+    /* Grow the dynamic reservation array safely. */
     if (sys->reservation_count == sys->reservation_capacity) {
-        size_t new_cap = sys->reservation_capacity == 0 ? 8 : sys->reservation_capacity * 2;
-        Reservation *tmp = realloc(sys->reservations, new_cap * sizeof(Reservation));
+        size_t new_cap = sys->reservation_capacity == 0 ? 8
+                                                        : sys->reservation_capacity * 2;
+        if (new_cap > (size_t)-1 / sizeof(Reservation)) {
+            return STATUS_OUT_OF_MEMORY;
+        }
+        Reservation *tmp = realloc(sys->reservations,
+                                   new_cap * sizeof(Reservation));
         if (tmp == NULL) {
             return STATUS_OUT_OF_MEMORY;
         }
@@ -65,7 +74,12 @@ Status reservation_cancel(ParkingSystem *sys, Id id) {
     if (st != STATUS_OK) {
         return st;
     }
-    sys->reservations[index].status = RESERVATION_CANCELLED;
+    Reservation *r = &sys->reservations[index];
+    if (r->status == RESERVATION_CANCELLED ||
+        r->status == RESERVATION_COMPLETED) {
+        return STATUS_CONFLICT;
+    }
+    r->status = RESERVATION_CANCELLED;
     return STATUS_OK;
 }
 
@@ -78,11 +92,17 @@ Status reservation_complete(ParkingSystem *sys, Id id) {
     if (st != STATUS_OK) {
         return st;
     }
-    sys->reservations[index].status = RESERVATION_COMPLETED;
+    Reservation *r = &sys->reservations[index];
+    if (r->status == RESERVATION_COMPLETED ||
+        r->status == RESERVATION_CANCELLED) {
+        return STATUS_CONFLICT;
+    }
+    r->status = RESERVATION_COMPLETED;
     return STATUS_OK;
 }
 
-Status reservation_find_by_id(const ParkingSystem *sys, Id id, size_t *out_index) {
+Status reservation_find_by_id(const ParkingSystem *sys, Id id,
+                              size_t *out_index) {
     if (sys == NULL || out_index == NULL) {
         return STATUS_INVALID_ARGUMENT;
     }
