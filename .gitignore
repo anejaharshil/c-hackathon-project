@@ -1,0 +1,33 @@
+# Compiled executables
+parking
+parking_asan
+*.exe
+
+# Object files
+*.o
+*.obj
+
+# Sanitizer binaries
+*_asan
+*_ubsan
+
+# Temporary files
+*.tmp
+
+# Runtime data files
+data/parking.dat
+data/parking.dat.tmp
+
+# Generated CSV reports
+reports/completed_sessions.csv
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
