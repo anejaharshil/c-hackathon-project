@@ -4,6 +4,7 @@ Sprint 3: console extensions, analytics and CSV reporting.
 Sprint 0 delivered the shared skeleton; Sprint 1 added the menu-driven console
 application and atomic binary persistence; Sprint 2 added reservation menu
 operations, improved analytics, CSV export, and corruption-safe loading.
+Sprint 3 (final consolidation) added reservation-aware entry allocation.
 
 ## Build
 
@@ -53,6 +54,9 @@ non-numeric input, and EOF are handled gracefully.
 - Vehicle registration with unique registration enforcement
 - Vehicle entry/exit with zone-aware slot allocation (ZONE_ACCESSIBLE never
   used as overflow)
+- Reservation-aware entry allocation: a slot reserved for another vehicle
+  during its protected interval cannot be allocated; the reservation holder
+  can use their own reserved slot
 - Parking status and statistics (capacity, occupancy %, zone utilisation,
   active/completed sessions, revenue, average duration, vehicle categories)
 - Reservation create/view/cancel/status using Developer 2's reservation API
@@ -91,8 +95,7 @@ See `CONTRACTS.md` for public APIs, invariants and ownership.
 
 - Reservations are saved and restored correctly through `storage_save()`
   / `storage_load()`.
-- Reservation-aware entry allocation (checking reservations before assigning
-  a slot on vehicle entry) is not yet supported by public interfaces;
-  reservations do not currently prevent vehicle entry. Reported as an
-  integration dependency for Developer 1/2 coordination.
+- Reservation-aware entry allocation is enforced at the `session_start()`
+  boundary via `reservation_is_available()`, so it cannot be bypassed by
+  callers other than the console.
 - CSV export uses `billing_compute()` as the authoritative fee calculation.

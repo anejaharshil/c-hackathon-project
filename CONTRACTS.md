@@ -99,6 +99,8 @@ by `MAX_REG_LEN`, `MAX_MODEL_LEN`, `MAX_OWNER_LEN`, `MAX_LOCATION_LEN`.
 - `Status reservation_find_by_id(const ParkingSystem*, Id, size_t*)`
 - `const Reservation *reservation_get(const ParkingSystem*, size_t)`
 - `size_t reservation_count(const ParkingSystem*)`
+- `Status reservation_is_available(const ParkingSystem*, Id slot_id,
+  Id vehicle_id, time_t, time_t, int*)`
 
 ### billing (Developer 2)
 - `Status billing_compute(const ParkingSystem*, Id session_id, long*)`
@@ -119,6 +121,11 @@ by `MAX_REG_LEN`, `MAX_MODEL_LEN`, `MAX_OWNER_LEN`, `MAX_LOCATION_LEN`.
 - `size_t analytics_occupied_slots(const ParkingSystem*)`
 - `long analytics_total_revenue(const ParkingSystem*)`
 - `size_t analytics_completed_sessions(const ParkingSystem*)`
+- `size_t analytics_total_capacity(const ParkingSystem*)`
+- `int analytics_occupancy_percentage(const ParkingSystem*)`
+- `void analytics_zone_utilization(const ParkingSystem*)`
+- `double analytics_average_duration(const ParkingSystem*)`
+- `void analytics_vehicle_category_counts(const ParkingSystem*)`
 
 ## Data ownership
 

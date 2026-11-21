@@ -160,7 +160,7 @@ size_t reservation_count(const ParkingSystem *sys) {
 }
 
 Status reservation_is_available(const ParkingSystem *sys, Id slot_id,
-                                time_t start_time, time_t end_time,
+                                Id vehicle_id, time_t start_time, time_t end_time,
                                 int *out_available) {
     if (sys == NULL || out_available == NULL) {
         return STATUS_INVALID_ARGUMENT;
@@ -176,10 +176,13 @@ Status reservation_is_available(const ParkingSystem *sys, Id slot_id,
 
     time_t now = time(NULL);
 
-    /* Check for conflicting non-cancelled, non-expired reservations. */
+    /* Check for conflicting non-cancelled, non-expired reservations.
+     * Reservations owned by vehicle_id are excluded so the holder can use
+     * their own reserved slot. */
     for (size_t i = 0; i < sys->reservation_count; i++) {
         const Reservation *r = &sys->reservations[i];
-        if (r->slot_id == slot_id && r->status != RESERVATION_CANCELLED &&
+        if (r->slot_id == slot_id && r->vehicle_id != vehicle_id &&
+            r->status != RESERVATION_CANCELLED &&
             !is_expired(r, now) &&
             overlaps(start_time, end_time, r->start_time, r->end_time)) {
             *out_available = 0;

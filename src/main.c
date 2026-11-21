@@ -9,7 +9,6 @@
 #include "analytics.h"
 
 #include <ctype.h>
-#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -191,22 +190,36 @@ static const char *status_text(Status st) {
  * ZONE_ACCESSIBLE is never used as overflow: it is reserved for
  * mobility-impaired users only. Returns 1 on success, 0 if no slot. */
 static int find_free_slot(const ParkingSystem *sys, ZoneType preferred,
+                          Id vehicle_id, time_t start_time,
                           size_t *out_index) {
     /* Non-accessible zones in preference order for overflow. */
     ZoneType fallback_zones[4] = { ZONE_A, ZONE_B, ZONE_C, ZONE_VISITOR };
 
-    /* Try the user's preferred zone first. */
-    if (slot_find_free(sys, preferred, out_index) == STATUS_OK) {
-        return 1;
+    /* Check zones in order: preferred first, then remaining non-accessible. */
+    ZoneType zones_to_check[5];
+    int n_zones = 0;
+    zones_to_check[n_zones++] = preferred;
+    for (int i = 0; i < 4; i++) {
+        if (fallback_zones[i] != preferred) {
+            zones_to_check[n_zones++] = fallback_zones[i];
+        }
     }
 
-    /* Overflow: try remaining non-accessible zones, skipping the preferred
-     * zone (already tried) and never touching ZONE_ACCESSIBLE. */
-    for (int i = 0; i < 4; i++) {
-        if (fallback_zones[i] == preferred) {
-            continue;
-        }
-        if (slot_find_free(sys, fallback_zones[i], out_index) == STATUS_OK) {
+    for (int z = 0; z < n_zones; z++) {
+        ZoneType zone = zones_to_check[z];
+        for (size_t i = 0; i < sys->slot_count; i++) {
+            const ParkingSlot *s = &sys->slots[i];
+            if (!s->is_available || s->zone != zone) {
+                continue;
+            }
+            int available = 0;
+            Status st = reservation_is_available(sys, s->id, vehicle_id,
+                                                 start_time, start_time + 1,
+                                                 &available);
+            if (st != STATUS_OK || !available) {
+                continue;
+            }
+            *out_index = i;
             return 1;
         }
     }
@@ -555,7 +568,8 @@ static int do_vehicle_entry(ParkingSystem *sys) {
     }
 
     ZoneType preferred = zone_for_user_type(v->user_type);
-    if (!find_free_slot(sys, preferred, &sidx)) {
+    time_t now = time(NULL);
+    if (!find_free_slot(sys, preferred, v->id, now, &sidx)) {
         printf("  No free slots available.\n");
         pause_for_user();
         return 1;

@@ -20,6 +20,8 @@ Status session_start(ParkingSystem *sys, Id vehicle_id, Id slot_id,
         return STATUS_NOT_FOUND;
     }
 
+    Status st;
+
     /* One active session per vehicle. */
     size_t dummy = 0;
     if (session_find_active_for_vehicle(sys, vehicle_id, &dummy) == STATUS_OK) {
@@ -28,6 +30,17 @@ Status session_start(ParkingSystem *sys, Id vehicle_id, Id slot_id,
 
     /* One active vehicle per slot. */
     if (!sys->slots[slot_index].is_available) {
+        return STATUS_CONFLICT;
+    }
+
+    /* Slot must not be reserved for another vehicle during this time. */
+    int available = 0;
+    st = reservation_is_available(sys, slot_id, vehicle_id,
+                                  start_time, start_time + 1, &available);
+    if (st != STATUS_OK) {
+        return st;
+    }
+    if (!available) {
         return STATUS_CONFLICT;
     }
 
