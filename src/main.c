@@ -413,6 +413,34 @@ static int do_reservation_status(ParkingSystem *sys) {
 
 /* ---------------- CSV export ---------------- */
 
+/* Write a single CSV field with proper escaping (RFC 4180).
+ * Fields containing commas, double quotes, or newlines are enclosed in
+ * double quotes, and any embedded double quotes are doubled.
+ * Returns 0 on success, -1 on write error. */
+static int csv_write_field(FILE *f, const char *s) {
+    const char *p = s;
+    int needs_quotes = 0;
+    for (p = s; *p != '\0'; p++) {
+        if (*p == ',' || *p == '"' || *p == '\n' || *p == '\r') {
+            needs_quotes = 1;
+            break;
+        }
+    }
+    if (needs_quotes) {
+        if (fputc('"', f) == EOF) return -1;
+        for (p = s; *p != '\0'; p++) {
+            if (*p == '"') {
+                if (fputc('"', f) == EOF) return -1;
+            }
+            if (fputc(*p, f) == EOF) return -1;
+        }
+        if (fputc('"', f) == EOF) return -1;
+    } else {
+        if (fputs(s, f) == EOF) return -1;
+    }
+    return 0;
+}
+
 /* Export completed sessions to a CSV file in the reports directory.
  * Returns STATUS_OK on success, STATUS_IO_ERROR on failure. */
 static Status export_csv_report(const ParkingSystem *sys) {
@@ -470,10 +498,13 @@ static Status export_csv_report(const ParkingSystem *sys) {
         const char *owner = (v != NULL) ? v->owner : "-";
         long slot_id_val = (sl != NULL) ? (long)sl->id : (long)s->id;
 
-        if (fprintf(f, "%lld,%s,%s,%ld,%ld,%ld,%ld,%ld\n",
-                (long long)s->id, reg, owner, slot_id_val,
-                (long)s->start_time, (long)s->end_time,
-                duration, cost) < 0) {
+        if (fprintf(f, "%lld,", (long long)s->id) < 0 ||
+            csv_write_field(f, reg) != 0 ||
+            fputc(',', f) == EOF ||
+            csv_write_field(f, owner) != 0 ||
+            fprintf(f, ",%ld,%ld,%ld,%ld,%ld\n",
+                    slot_id_val, (long)s->start_time, (long)s->end_time,
+                    duration, cost) < 0) {
             rc = STATUS_IO_ERROR;
         }
     }
