@@ -214,7 +214,7 @@ static int find_free_slot(const ParkingSystem *sys, ZoneType preferred,
             }
             int available = 0;
             Status st = reservation_is_available(sys, s->id, vehicle_id,
-                                                 start_time, start_time + 1,
+                                                 start_time, start_time + (100LL * 365 * 24 * 3600),
                                                  &available);
             if (st != STATUS_OK || !available) {
                 continue;

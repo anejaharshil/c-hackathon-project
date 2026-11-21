@@ -33,10 +33,14 @@ Status session_start(ParkingSystem *sys, Id vehicle_id, Id slot_id,
         return STATUS_CONFLICT;
     }
 
-    /* Slot must not be reserved for another vehicle during this time. */
+    /* Slot must not be reserved for another vehicle during any future time.
+     * Since the session end time is unknown at entry, treat the session as
+     * potentially indefinite: any future non-cancelled, non-expired
+     * reservation on this slot belonging to another vehicle blocks entry. */
     int available = 0;
     st = reservation_is_available(sys, slot_id, vehicle_id,
-                                  start_time, start_time + 1, &available);
+                                  start_time, start_time + (100LL * 365 * 24 * 3600),
+                                  &available);
     if (st != STATUS_OK) {
         return st;
     }

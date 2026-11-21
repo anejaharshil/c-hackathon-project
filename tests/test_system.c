@@ -468,6 +468,227 @@ static void test_normal_shutdown(void) {
 }
 
 /* ---------------------------------------------------------------- */
+/* Reservation policy regression tests                              */
+/* ---------------------------------------------------------------- */
+
+static void test_entry_before_future_reservation_rejected(void) {
+    TEST(entry before future reservation rejected);
+    ParkingSystem *sys = NULL;
+    system_create(&sys);
+    setup_minimal(sys);
+
+    /* Register vehicle 2 */
+    Id vid2 = ID_NONE;
+    ASSERT(vehicle_register(sys, "TEST02", VEHICLE_CAR,
+                            "Test Owner 2", USER_STUDENT, &vid2) == STATUS_OK,
+           "vehicle 2 register failed");
+
+    /* Vehicle 2 reserves slot 0 starting 1 hour from now */
+    time_t now = time(NULL);
+    Id rid = ID_NONE;
+    ASSERT(reservation_create(sys, 2, sys->slots[0].id,
+                              now + 3600, now + 7200, &rid) == STATUS_OK,
+           "reservation_create failed");
+
+    /* Vehicle 1 tries to enter slot 0 now (before the reservation starts) */
+    Id sid = ID_NONE;
+    ASSERT(session_start(sys, 1, sys->slots[0].id, now, &sid) == STATUS_CONFLICT,
+           "entry before future reservation should conflict");
+
+    system_destroy(sys);
+    PASS();
+}
+
+static void test_entry_during_reservation_rejected(void) {
+    TEST(entry during reservation rejected);
+    ParkingSystem *sys = NULL;
+    system_create(&sys);
+    setup_minimal(sys);
+
+    /* Register vehicle 2 */
+    Id vid2 = ID_NONE;
+    ASSERT(vehicle_register(sys, "TEST02", VEHICLE_CAR,
+                            "Test Owner 2", USER_STUDENT, &vid2) == STATUS_OK,
+           "vehicle 2 register failed");
+
+    /* Vehicle 2 reserves slot 0 from now to 2 hours from now */
+    time_t now = time(NULL);
+    Id rid = ID_NONE;
+    ASSERT(reservation_create(sys, 2, sys->slots[0].id,
+                              now, now + 7200, &rid) == STATUS_OK,
+           "reservation_create failed");
+
+    /* Vehicle 1 tries to enter slot 0 during the reservation window */
+    Id sid = ID_NONE;
+    ASSERT(session_start(sys, 1, sys->slots[0].id, now + 1800, &sid) == STATUS_CONFLICT,
+           "entry during reservation should conflict");
+
+    system_destroy(sys);
+    PASS();
+}
+
+static void test_entry_using_own_reservation_allowed(void) {
+    TEST(entry using own reservation allowed);
+    ParkingSystem *sys = NULL;
+    system_create(&sys);
+    setup_minimal(sys);
+
+    /* Vehicle 1 reserves slot 0 from now to 2 hours from now */
+    time_t now = time(NULL);
+    Id rid = ID_NONE;
+    ASSERT(reservation_create(sys, 1, sys->slots[0].id,
+                              now, now + 7200, &rid) == STATUS_OK,
+           "reservation_create failed");
+
+    /* Vehicle 1 enters slot 0 during its own reservation */
+    Id sid = ID_NONE;
+    ASSERT(session_start(sys, 1, sys->slots[0].id, now + 1800, &sid) == STATUS_OK,
+           "entry using own reservation should succeed");
+
+    system_destroy(sys);
+    PASS();
+}
+
+static void test_entry_after_reservation_expiry_allowed(void) {
+    TEST(entry after reservation expiry allowed);
+    ParkingSystem *sys = NULL;
+    system_create(&sys);
+    setup_minimal(sys);
+
+    /* Register vehicle 2 */
+    Id vid2 = ID_NONE;
+    ASSERT(vehicle_register(sys, "TEST02", VEHICLE_CAR,
+                            "Test Owner 2", USER_STUDENT, &vid2) == STATUS_OK,
+           "vehicle 2 register failed");
+
+    /* Vehicle 2 reserves slot 0 from 2 hours ago to 1 hour ago (expired) */
+    time_t now = time(NULL);
+    Id rid = ID_NONE;
+    ASSERT(reservation_create(sys, 2, sys->slots[0].id,
+                              now - 7200, now - 3600, &rid) == STATUS_OK,
+           "reservation_create failed");
+
+    /* Vehicle 1 enters slot 0 now (reservation has expired) */
+    Id sid = ID_NONE;
+    ASSERT(session_start(sys, 1, sys->slots[0].id, now, &sid) == STATUS_OK,
+           "entry after reservation expiry should succeed");
+
+    system_destroy(sys);
+    PASS();
+}
+
+static void test_entry_after_cancellation_allowed(void) {
+    TEST(entry after cancellation allowed);
+    ParkingSystem *sys = NULL;
+    system_create(&sys);
+    setup_minimal(sys);
+
+    /* Register vehicle 2 */
+    Id vid2 = ID_NONE;
+    ASSERT(vehicle_register(sys, "TEST02", VEHICLE_CAR,
+                            "Test Owner 2", USER_STUDENT, &vid2) == STATUS_OK,
+           "vehicle 2 register failed");
+
+    /* Vehicle 2 reserves slot 0 from now to 2 hours from now, then cancels */
+    time_t now = time(NULL);
+    Id rid = ID_NONE;
+    ASSERT(reservation_create(sys, 2, sys->slots[0].id,
+                              now, now + 7200, &rid) == STATUS_OK,
+           "reservation_create failed");
+    ASSERT(reservation_cancel(sys, rid) == STATUS_OK, "reservation_cancel failed");
+
+    /* Vehicle 1 enters slot 0 now (reservation was cancelled) */
+    Id sid = ID_NONE;
+    ASSERT(session_start(sys, 1, sys->slots[0].id, now, &sid) == STATUS_OK,
+           "entry after cancellation should succeed");
+
+    system_destroy(sys);
+    PASS();
+}
+
+static void test_all_slots_reserved_entry_rejected(void) {
+    TEST(all slots reserved entry rejected);
+    ParkingSystem *sys = NULL;
+    system_create(&sys);
+    setup_minimal(sys);
+
+    /* Register vehicle 2 */
+    Id vid2 = ID_NONE;
+    ASSERT(vehicle_register(sys, "TEST02", VEHICLE_CAR,
+                            "Test Owner 2", USER_STUDENT, &vid2) == STATUS_OK,
+           "vehicle 2 register failed");
+
+    /* Reserve every slot for vehicle 2 starting now */
+    time_t now = time(NULL);
+    for (size_t i = 0; i < sys->slot_count; i++) {
+        Id rid = ID_NONE;
+        ASSERT(reservation_create(sys, 2, sys->slots[i].id,
+                                  now, now + 7200, &rid) == STATUS_OK,
+               "reservation_create failed");
+    }
+
+    /* Vehicle 1 tries to enter any slot — all are reserved */
+    int found_available = 0;
+    for (size_t i = 0; i < sys->slot_count; i++) {
+        if (sys->slots[i].is_available) {
+            int avail = 0;
+            Status st = reservation_is_available(sys, sys->slots[i].id, 1,
+                                                 now, now + (100LL * 365 * 24 * 3600),
+                                                 &avail);
+            if (st == STATUS_OK && avail) {
+                found_available = 1;
+                break;
+            }
+        }
+    }
+    ASSERT(!found_available, "all slots reserved should reject entry");
+
+    system_destroy(sys);
+    PASS();
+}
+
+static void test_failed_entry_leaves_state_unchanged(void) {
+    TEST(failed entry leaves state unchanged);
+    ParkingSystem *sys = NULL;
+    system_create(&sys);
+    setup_minimal(sys);
+
+    /* Register vehicle 2 */
+    Id vid2 = ID_NONE;
+    ASSERT(vehicle_register(sys, "TEST02", VEHICLE_CAR,
+                            "Test Owner 2", USER_STUDENT, &vid2) == STATUS_OK,
+           "vehicle 2 register failed");
+
+    /* Vehicle 2 reserves slot 0 from now to 2 hours from now */
+    time_t now = time(NULL);
+    Id rid = ID_NONE;
+    ASSERT(reservation_create(sys, 2, sys->slots[0].id,
+                              now, now + 7200, &rid) == STATUS_OK,
+           "reservation_create failed");
+
+    /* Record state before failed entry */
+    size_t session_count_before = sys->session_count;
+    int slot_available_before = sys->slots[0].is_available;
+    Id slot_vehicle_before = sys->slots[0].vehicle_id;
+
+    /* Vehicle 1 tries to enter slot 0 — should conflict */
+    Id sid = ID_NONE;
+    ASSERT(session_start(sys, 1, sys->slots[0].id, now, &sid) == STATUS_CONFLICT,
+           "entry during reservation should conflict");
+
+    /* State must be unchanged */
+    ASSERT(sys->session_count == session_count_before,
+           "session count changed after failed entry");
+    ASSERT(sys->slots[0].is_available == slot_available_before,
+           "slot availability changed after failed entry");
+    ASSERT(sys->slots[0].vehicle_id == slot_vehicle_before,
+           "slot vehicle_id changed after failed entry");
+
+    system_destroy(sys);
+    PASS();
+}
+
+/* ---------------------------------------------------------------- */
 /* Main test runner                                                 */
 /* ---------------------------------------------------------------- */
 
@@ -489,6 +710,13 @@ int main(void) {
     test_truncated_save_file();
     test_csv_export();
     test_normal_shutdown();
+    test_entry_before_future_reservation_rejected();
+    test_entry_during_reservation_rejected();
+    test_entry_using_own_reservation_allowed();
+    test_entry_after_reservation_expiry_allowed();
+    test_entry_after_cancellation_allowed();
+    test_all_slots_reserved_entry_rejected();
+    test_failed_entry_leaves_state_unchanged();
 
     printf("\n========================================================\n");
     printf("Tests run: %d, passed: %d, failed: %d\n",

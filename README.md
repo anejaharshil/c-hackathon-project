@@ -116,8 +116,11 @@ See `CONTRACTS.md` for public APIs, invariants and ownership.
   expired reservations)
 - A reservation does not block its own holder from entering
 - Expired and cancelled reservations do not block slot allocation
+- A vehicle without a known departure time cannot occupy a slot that has a
+  future, non-cancelled reservation belonging to another vehicle
 - Reservation-aware entry allocation enforced at the `session_start()`
-  boundary via `reservation_is_available()`
+  boundary via `reservation_is_available()` — cannot be bypassed by callers
+- Physical occupancy always takes precedence over reservations
 
 ## Automated tests
 
