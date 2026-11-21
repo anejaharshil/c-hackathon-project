@@ -39,4 +39,12 @@ const Reservation *reservation_get(const struct ParkingSystem *sys, size_t index
 
 size_t reservation_count(const struct ParkingSystem *sys);
 
+/* Check whether a slot is available for a reservation during [start_time, end_time).
+ * Considers existing non-cancelled, non-expired reservations and active parking
+ * sessions on the slot. Sets out_available to 1 if available, 0 otherwise.
+ * Returns STATUS_NOT_FOUND if the slot does not exist. */
+Status reservation_is_available(const struct ParkingSystem *sys, Id slot_id,
+                                time_t start_time, time_t end_time,
+                                int *out_available);
+
 #endif /* RESERVATION_H */
