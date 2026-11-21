@@ -4,6 +4,7 @@
 #include "slot.h"
 #include "session.h"
 #include "billing.h"
+#include "reservation.h"
 #include "storage.h"
 #include "analytics.h"
 
@@ -15,14 +16,19 @@
 #include <time.h>
 
 /* Menu choices. */
-#define MENU_REGISTER   1  /* Register Vehicle */
-#define MENU_ENTRY      2  /* Vehicle Entry */
-#define MENU_EXIT       3  /* Vehicle Exit */
-#define MENU_SEARCH     4  /* Search Vehicle */
-#define MENU_STATUS     5  /* Display Parking Status */
-#define MENU_STATS      6  /* Parking Statistics */
-#define MENU_SAVE       7  /* Save Data */
-#define MENU_SAVE_EXIT  0  /* Save and Exit */
+#define MENU_REGISTER      1  /* Register Vehicle */
+#define MENU_ENTRY         2  /* Vehicle Entry */
+#define MENU_EXIT          3  /* Vehicle Exit */
+#define MENU_SEARCH        4  /* Search Vehicle */
+#define MENU_STATUS        5  /* Display Parking Status */
+#define MENU_STATS         6  /* Parking Statistics */
+#define MENU_CREATE_RES    7  /* Create Reservation */
+#define MENU_VIEW_RES      8  /* View Reservation */
+#define MENU_CANCEL_RES    9  /* Cancel Reservation */
+#define MENU_RES_STATUS   10  /* Reservation Status */
+#define MENU_EXPORT_CSV   11  /* Export CSV Report */
+#define MENU_SAVE         12  /* Save Data */
+#define MENU_SAVE_EXIT     0  /* Save and Exit */
 
 /* Input buffer sizes. */
 #define LINE_BUF  128
@@ -205,6 +211,279 @@ static int find_free_slot(const ParkingSystem *sys, ZoneType preferred,
         }
     }
     return 0;
+}
+
+/* Read a timestamp (seconds since epoch) with validation.
+ * Returns 1 on success, 0 on EOF or invalid input. */
+static int read_timestamp(time_t *out, const char *prompt) {
+    char tsbuf[64];
+    for (;;) {
+        printf("%s", prompt);
+        fflush(stdout);
+        if (!read_line(tsbuf, sizeof(tsbuf))) {
+            return 0; /* EOF */
+        }
+        char *p = skip_spaces(tsbuf);
+        if (*p == '\0') {
+            printf("  Input cannot be empty. Try again.\n");
+            continue;
+        }
+        char *end = NULL;
+        long long val = strtoll(p, &end, 10);
+        if (end == p || *end != '\0') {
+            printf("  Invalid number. Try again.\n");
+            continue;
+        }
+        if (val < 0) {
+            printf("  Timestamp cannot be negative. Try again.\n");
+            continue;
+        }
+        *out = (time_t)val;
+        return 1;
+    }
+}
+
+
+/* ---------------- reservation menu actions ---------------- */
+
+static int do_create_reservation(ParkingSystem *sys) {
+    char reg[MAX_REG_LEN];
+    time_t start_time = 0, end_time = 0;
+    Id rid = ID_NONE;
+
+    printf("\n--- Create Reservation ---\n");
+    if (!read_string(reg, sizeof(reg), "Registration: ")) {
+        printf("  Cancelled (EOF).\n");
+        return 1;
+    }
+
+    size_t vidx = 0;
+    Status st = vehicle_find_by_reg(sys, reg, &vidx);
+    if (st != STATUS_OK) {
+        printf("  Vehicle not found: %s\n", status_text(st));
+        pause_for_user();
+        return 1;
+    }
+    const Vehicle *v = vehicle_get(sys, vidx);
+
+    long slot_id_long = 0;
+    if (!read_integer((int *)&slot_id_long, "Slot ID: ")) {
+        printf("  Cancelled (EOF).\n");
+        return 1;
+    }
+    if (slot_id_long < 1) {
+        printf("  Invalid slot ID.\n");
+        pause_for_user();
+        return 1;
+    }
+    Id slot_id = (Id)slot_id_long;
+
+    size_t sidx = 0;
+    if (slot_find_by_id(sys, slot_id, &sidx) != STATUS_OK) {
+        printf("  Slot not found.\n");
+        pause_for_user();
+        return 1;
+    }
+
+    if (!read_timestamp(&start_time, "Start time (epoch seconds): ")) {
+        printf("  Cancelled (EOF).\n");
+        return 1;
+    }
+    if (!read_timestamp(&end_time, "End time (epoch seconds): ")) {
+        printf("  Cancelled (EOF).\n");
+        return 1;
+    }
+    if (end_time <= start_time) {
+        printf("  End time must be after start time.\n");
+        pause_for_user();
+        return 1;
+    }
+
+    st = reservation_create(sys, v->id, slot_id, start_time, end_time, &rid);
+    if (st != STATUS_OK) {
+        printf("  Reservation failed: %s\n", status_text(st));
+        pause_for_user();
+        return 1;
+    }
+    printf("  Reservation created. ID=%lld\n", (long long)rid);
+    pause_for_user();
+    return 1;
+}
+
+static void print_reservation(const Reservation *r) {
+    if (r == NULL) {
+        return;
+    }
+    printf("  ID: %lld\n", (long long)r->id);
+    printf("  Vehicle ID: %lld\n", (long long)r->vehicle_id);
+    printf("  Slot ID: %lld\n", (long long)r->slot_id);
+    printf("  Start time: %ld\n", (long)r->start_time);
+    printf("  End time: %ld\n", (long)r->end_time);
+    const char *status_str = "Unknown";
+    switch (r->status) {
+        case RESERVATION_PENDING:  status_str = "Pending"; break;
+        case RESERVATION_ACTIVE:   status_str = "Active"; break;
+        case RESERVATION_COMPLETED: status_str = "Completed"; break;
+        case RESERVATION_CANCELLED: status_str = "Cancelled"; break;
+    }
+    printf("  Status: %s\n", status_str);
+}
+
+static int do_view_reservation(ParkingSystem *sys) {
+    long id_long = 0;
+    printf("\n--- View Reservation ---\n");
+    if (!read_integer((int *)&id_long, "Reservation ID: ")) {
+        printf("  Cancelled (EOF).\n");
+        return 1;
+    }
+    Id rid = (Id)id_long;
+
+    size_t idx = 0;
+    Status st = reservation_find_by_id(sys, rid, &idx);
+    if (st != STATUS_OK) {
+        printf("  Reservation not found: %s\n", status_text(st));
+        pause_for_user();
+        return 1;
+    }
+    const Reservation *r = reservation_get(sys, idx);
+    if (r == NULL) {
+        printf("  Internal error: reservation lookup failed.\n");
+        pause_for_user();
+        return 1;
+    }
+    print_reservation(r);
+    pause_for_user();
+    return 1;
+}
+
+static int do_cancel_reservation(ParkingSystem *sys) {
+    long id_long = 0;
+    printf("\n--- Cancel Reservation ---\n");
+    if (!read_integer((int *)&id_long, "Reservation ID: ")) {
+        printf("  Cancelled (EOF).\n");
+        return 1;
+    }
+    Id rid = (Id)id_long;
+
+    Status st = reservation_cancel(sys, rid);
+    if (st != STATUS_OK) {
+        printf("  Cancel failed: %s\n", status_text(st));
+        pause_for_user();
+        return 1;
+    }
+    printf("  Reservation cancelled.\n");
+    pause_for_user();
+    return 1;
+}
+
+static int do_reservation_status(ParkingSystem *sys) {
+    printf("\n--- Reservation Status ---\n");
+    size_t count = reservation_count(sys);
+    printf("  Total reservations: %zu\n", count);
+    for (size_t i = 0; i < count; i++) {
+        const Reservation *r = reservation_get(sys, i);
+        if (r == NULL) continue;
+        printf("  ID=%lld vehicle=%lld slot=%lld status=",
+               (long long)r->id, (long long)r->vehicle_id,
+               (long long)r->slot_id);
+        switch (r->status) {
+            case RESERVATION_PENDING:  printf("Pending\n"); break;
+            case RESERVATION_ACTIVE:   printf("Active\n"); break;
+            case RESERVATION_COMPLETED: printf("Completed\n"); break;
+            case RESERVATION_CANCELLED: printf("Cancelled\n"); break;
+            default: printf("Unknown\n"); break;
+        }
+    }
+    pause_for_user();
+    return 1;
+}
+
+/* ---------------- CSV export ---------------- */
+
+/* Export completed sessions to a CSV file in the reports directory.
+ * Returns STATUS_OK on success, STATUS_IO_ERROR on failure. */
+static Status export_csv_report(const ParkingSystem *sys) {
+    if (sys == NULL) {
+        return STATUS_INVALID_ARGUMENT;
+    }
+
+    /* Build output path: reports/completed_sessions.csv */
+    size_t dir_len = strlen(CONFIG_REPORTS_PATH);
+    size_t file_len = strlen("completed_sessions.csv");
+    size_t path_len = dir_len + file_len + 1;
+    char *path = malloc(path_len);
+    if (path == NULL) {
+        return STATUS_OUT_OF_MEMORY;
+    }
+    snprintf(path, path_len, "%s%s", CONFIG_REPORTS_PATH, "completed_sessions.csv");
+
+    FILE *f = fopen(path, "w");
+    if (f == NULL) {
+        free(path);
+        return STATUS_IO_ERROR;
+    }
+
+    int rc = STATUS_OK;
+    if (fprintf(f,
+            "Session ID,Vehicle Registration,Owner,Parking Slot,Entry Timestamp,"
+            "Exit Timestamp,Duration (seconds),Calculated Fee (minor units)\n") < 0) {
+        rc = STATUS_IO_ERROR;
+    }
+
+    for (size_t i = 0; i < sys->session_count && rc == STATUS_OK; i++) {
+        const ParkingSession *s = &sys->sessions[i];
+        if (s->active || s->end_time == 0) {
+            continue; /* skip active sessions */
+        }
+
+        /* Find vehicle and slot details. */
+        size_t vidx = 0, sidx = 0;
+        const Vehicle *v = NULL;
+        const ParkingSlot *sl = NULL;
+        if (vehicle_find_by_id(sys, s->vehicle_id, &vidx) == STATUS_OK) {
+            v = vehicle_get(sys, vidx);
+        }
+        if (slot_find_by_id(sys, s->slot_id, &sidx) == STATUS_OK) {
+            sl = slot_get(sys, sidx);
+        }
+
+        long cost = 0;
+        if (billing_compute(sys, s->id, &cost) != STATUS_OK) {
+            cost = 0;
+        }
+
+        long duration = (long)(s->end_time - s->start_time);
+        const char *reg = (v != NULL) ? v->registration : "-";
+        const char *owner = (v != NULL) ? v->owner : "-";
+        long slot_id_val = (sl != NULL) ? (long)sl->id : (long)s->id;
+
+        if (fprintf(f, "%lld,%s,%s,%ld,%ld,%ld,%ld,%ld\n",
+                (long long)s->id, reg, owner, slot_id_val,
+                (long)s->start_time, (long)s->end_time,
+                duration, cost) < 0) {
+            rc = STATUS_IO_ERROR;
+        }
+    }
+
+    if (fclose(f) != 0 && rc == STATUS_OK) {
+        rc = STATUS_IO_ERROR;
+    }
+
+    free(path);
+    return rc;
+}
+
+static int do_export_csv(ParkingSystem *sys) {
+    printf("\n--- Export CSV Report ---\n");
+    Status st = export_csv_report(sys);
+    if (st != STATUS_OK) {
+        printf("  CSV export failed: %s\n", status_text(st));
+    } else {
+        printf("  CSV exported to %scompleted_sessions.csv\n",
+               CONFIG_REPORTS_PATH);
+    }
+    pause_for_user();
+    return 1;
 }
 
 /* ---------------- menu actions ---------------- */
@@ -446,20 +725,28 @@ static int do_parking_status(const ParkingSystem *sys) {
 }
 
 static int do_parking_statistics(const ParkingSystem *sys) {
-    size_t total = slot_count(sys);
+    size_t total = analytics_total_capacity(sys);
     size_t occupied = analytics_occupied_slots(sys);
     size_t available = total > occupied ? total - occupied : 0;
     size_t active = analytics_active_sessions(sys);
     size_t completed = analytics_completed_sessions(sys);
     long revenue = analytics_total_revenue(sys);
+    int pct = analytics_occupancy_percentage(sys);
+    double avg_dur = analytics_average_duration(sys);
 
     printf("\n--- Parking Statistics ---\n");
-    printf("  Total slots:       %zu\n", total);
-    printf("  Occupied slots:    %zu\n", occupied);
-    printf("  Available slots:   %zu\n", available);
-    printf("  Active sessions:   %zu\n", active);
-    printf("  Completed sessions:%zu\n", completed);
-    printf("  Total revenue:     %ld minor units\n", revenue);
+    printf("  Total capacity:     %zu\n", total);
+    printf("  Occupied slots:     %zu\n", occupied);
+    printf("  Available slots:    %zu\n", available);
+    printf("  Occupancy:          %d%%\n", pct);
+    printf("  Active sessions:    %zu\n", active);
+    printf("  Completed sessions: %zu\n", completed);
+    printf("  Total revenue:      %ld minor units\n", revenue);
+    printf("  Avg duration:       %.0f seconds\n", avg_dur);
+    printf("  Zone utilisation:\n");
+    analytics_zone_utilization(sys);
+    printf("  Vehicle categories:\n");
+    analytics_vehicle_category_counts(sys);
     pause_for_user();
     return 1;
 }
@@ -488,7 +775,12 @@ static void print_menu(void) {
     printf("4. Search Vehicle\n");
     printf("5. Display Parking Status\n");
     printf("6. Parking Statistics\n");
-    printf("7. Save Data\n");
+    printf("7. Create Reservation\n");
+    printf("8. View Reservation\n");
+    printf("9. Cancel Reservation\n");
+    printf("10. Reservation Status\n");
+    printf("11. Export CSV Report\n");
+    printf("12. Save Data\n");
     printf("0. Save and Exit\n");
     printf("---------------------------\n");
 }
@@ -562,6 +854,21 @@ int main(void) {
                 break;
             case MENU_STATS:
                 do_parking_statistics(sys);
+                break;
+            case MENU_CREATE_RES:
+                do_create_reservation(sys);
+                break;
+            case MENU_VIEW_RES:
+                do_view_reservation(sys);
+                break;
+            case MENU_CANCEL_RES:
+                do_cancel_reservation(sys);
+                break;
+            case MENU_RES_STATUS:
+                do_reservation_status(sys);
+                break;
+            case MENU_EXPORT_CSV:
+                do_export_csv(sys);
                 break;
             case MENU_SAVE:
                 do_save_data(sys);
