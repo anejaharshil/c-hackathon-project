@@ -48,6 +48,9 @@ Status session_start(ParkingSystem *sys, Id vehicle_id, Id slot_id,
      * existing data. */
     if (sys->session_count == sys->session_capacity) {
         size_t new_cap = sys->session_capacity == 0 ? 8 : sys->session_capacity * 2;
+        if (new_cap > (size_t)-1 / sizeof(ParkingSession)) {
+            return STATUS_OUT_OF_MEMORY;
+        }
         ParkingSession *tmp = realloc(sys->sessions, new_cap * sizeof(ParkingSession));
         if (tmp == NULL) {
             return STATUS_OUT_OF_MEMORY;

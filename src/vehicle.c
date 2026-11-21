@@ -56,6 +56,9 @@ Status vehicle_register(ParkingSystem *sys, const char *registration,
 
     if (sys->vehicle_count == sys->vehicle_capacity) {
         size_t new_cap = sys->vehicle_capacity == 0 ? 8 : sys->vehicle_capacity * 2;
+        if (new_cap > (size_t)-1 / sizeof(Vehicle)) {
+            return STATUS_OUT_OF_MEMORY;
+        }
         Vehicle *tmp = realloc(sys->vehicles, new_cap * sizeof(Vehicle));
         if (tmp == NULL) {
             return STATUS_OUT_OF_MEMORY;
