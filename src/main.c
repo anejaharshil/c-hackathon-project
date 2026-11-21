@@ -8,6 +8,7 @@
 #include "analytics.h"
 
 #include <ctype.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -110,11 +111,22 @@ static void pause_for_user(void) {
     (void)read_line(dummy, sizeof(dummy));
 }
 
+/* Check whether a file exists and is readable. Returns 1 if it exists, 0
+ * otherwise (missing, or unreadable for any other reason). */
+static int file_exists(const char *path) {
+    FILE *f = fopen(path, "rb");
+    if (f == NULL) {
+        return 0;
+    }
+    fclose(f);
+    return 1;
+}
+
 /* ---------------- zone mapping ---------------- */
 
 /* Map a vehicle user type to a preferred parking zone.
- * Only ZONE_A slots exist after Sprint 0 slot_init(), so callers must
- * fall back to ZONE_A when the preferred zone has no free slots. */
+ * ZONE_ACCESSIBLE is never a preferred zone; it is reserved for
+ * mobility-impaired users and must never be handed out as overflow. */
 static ZoneType zone_for_user_type(UserType ut) {
     switch (ut) {
         case USER_STUDENT: return ZONE_C;
@@ -169,12 +181,25 @@ static const char *status_text(Status st) {
     }
 }
 
-/* Try to find a free slot: preferred zone first, then ZONE_A, then any. */
-static int find_any_free_slot(const ParkingSystem *sys, size_t *out_index) {
-    ZoneType preferred = ZONE_A;
-    ZoneType fallback_zones[3] = { ZONE_A, ZONE_C, ZONE_VISITOR };
-    (void)preferred;
-    for (int i = 0; i < 3; i++) {
+/* Try to find a free slot. The preferred zone is tried first.
+ * ZONE_ACCESSIBLE is never used as overflow: it is reserved for
+ * mobility-impaired users only. Returns 1 on success, 0 if no slot. */
+static int find_free_slot(const ParkingSystem *sys, ZoneType preferred,
+                          size_t *out_index) {
+    /* Non-accessible zones in preference order for overflow. */
+    ZoneType fallback_zones[4] = { ZONE_A, ZONE_B, ZONE_C, ZONE_VISITOR };
+
+    /* Try the user's preferred zone first. */
+    if (slot_find_free(sys, preferred, out_index) == STATUS_OK) {
+        return 1;
+    }
+
+    /* Overflow: try remaining non-accessible zones, skipping the preferred
+     * zone (already tried) and never touching ZONE_ACCESSIBLE. */
+    for (int i = 0; i < 4; i++) {
+        if (fallback_zones[i] == preferred) {
+            continue;
+        }
         if (slot_find_free(sys, fallback_zones[i], out_index) == STATUS_OK) {
             return 1;
         }
@@ -251,9 +276,7 @@ static int do_vehicle_entry(ParkingSystem *sys) {
     }
 
     ZoneType preferred = zone_for_user_type(v->user_type);
-    /* Try the preferred zone first, then any available slot. */
-    if (slot_find_free(sys, preferred, &sidx) != STATUS_OK &&
-        !find_any_free_slot(sys, &sidx)) {
+    if (!find_free_slot(sys, preferred, &sidx)) {
         printf("  No free slots available.\n");
         pause_for_user();
         return 1;
@@ -322,20 +345,13 @@ static int do_vehicle_exit(ParkingSystem *sys) {
     }
 
     /* Billing requires a completed session (end_time set, active=0).
-     * NOTE: billing_compute() in Sprint 0 has a condition bug
-     * (!s->active instead of s->active) that rejects every completed
-     * session. We try the API first; if it fails, compute the bill
-     * directly from the session timestamps as a workaround. */
+     * billing_compute() is the authoritative calculation. */
     long cost = 0;
     st = billing_compute(sys, sid, &cost);
     if (st != STATUS_OK) {
-        /* Workaround: compute bill directly from session times. */
-        const ParkingSession *s2 = session_get(sys, sidx);
-        if (s2 != NULL && s2->end_time != 0) {
-            double hours = difftime(s2->end_time, s2->start_time) / 3600.0;
-            if (hours < 0.0) hours = 0.0;
-            cost = (long)((hours * CONFIG_DEFAULT_HOURLY_RATE) + 0.5);
-        }
+        printf("  Billing failed: %s\n", status_text(st));
+        pause_for_user();
+        return 1;
     }
 
     char bill[256];
@@ -491,19 +507,27 @@ int main(void) {
         return 1;
     }
 
-    /* Attempt to load saved state. */
+    /* Attempt to load saved state.
+     * Distinguish between "file does not exist" (legitimate first run) and
+     * "file exists but is invalid" (loading failure; do not silently
+     * overwrite with a fresh system). */
+    int have_file = file_exists(CONFIG_DATA_PATH);
     Status st = storage_load(sys, CONFIG_DATA_PATH);
-    if (st == STATUS_IO_ERROR) {
-        /* No save file or corrupted: initialise fresh slots. */
+    if (!have_file) {
+        /* No save file: legitimate first run. Initialise fresh slots. */
         if (slot_init(sys, CONFIG_SLOT_CAPACITY) != STATUS_OK) {
             fprintf(stderr, "Failed to initialise parking slots.\n");
             system_destroy(sys);
             return 1;
         }
-        printf("No valid save file found. Fresh system initialised with "
+        printf("No save file found. Fresh system initialised with "
                "%d slots.\n", CONFIG_SLOT_CAPACITY);
     } else if (st != STATUS_OK) {
-        fprintf(stderr, "Storage load error: %s\n", status_text(st));
+        /* File exists but could not be loaded: report the error. Do not
+         * overwrite the existing file. */
+        fprintf(stderr, "Save file '%s' is invalid or corrupted: %s\n",
+                CONFIG_DATA_PATH, status_text(st));
+        fprintf(stderr, "Please restore or remove the file and restart.\n");
         system_destroy(sys);
         return 1;
     } else {
