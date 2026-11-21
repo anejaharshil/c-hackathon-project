@@ -4,31 +4,35 @@
 #include <stdlib.h>
 #include <string.h>
 
-static int slot_is_occupied(const ParkingSystem *sys, Id slot_id) {
-    size_t index = 0;
-    if (slot_find_by_id(sys, slot_id, &index) != STATUS_OK) {
-        return 1; /* treat unknown slot as occupied to be safe */
-    }
-    return !sys->slots[index].is_available;
-}
-
 Status session_start(ParkingSystem *sys, Id vehicle_id, Id slot_id,
                      time_t start_time, Id *out_id) {
     if (sys == NULL || out_id == NULL) {
         return STATUS_INVALID_ARGUMENT;
     }
 
-    /* One active session per vehicle invariant. */
+    /* Validate the vehicle and slot exist. */
+    size_t vehicle_index = 0;
+    if (vehicle_find_by_id(sys, vehicle_id, &vehicle_index) != STATUS_OK) {
+        return STATUS_NOT_FOUND;
+    }
+    size_t slot_index = 0;
+    if (slot_find_by_id(sys, slot_id, &slot_index) != STATUS_OK) {
+        return STATUS_NOT_FOUND;
+    }
+
+    /* One active session per vehicle. */
     size_t dummy = 0;
     if (session_find_active_for_vehicle(sys, vehicle_id, &dummy) == STATUS_OK) {
         return STATUS_CONFLICT;
     }
 
-    /* One active vehicle per slot invariant. */
-    if (slot_is_occupied(sys, slot_id)) {
+    /* One active vehicle per slot. */
+    if (!sys->slots[slot_index].is_available) {
         return STATUS_CONFLICT;
     }
 
+    /* Grow session storage before mutating any state; failure preserves
+     * existing data. */
     if (sys->session_count == sys->session_capacity) {
         size_t new_cap = sys->session_capacity == 0 ? 8 : sys->session_capacity * 2;
         ParkingSession *tmp = realloc(sys->sessions, new_cap * sizeof(ParkingSession));
@@ -37,6 +41,12 @@ Status session_start(ParkingSystem *sys, Id vehicle_id, Id slot_id,
         }
         sys->sessions = tmp;
         sys->session_capacity = new_cap;
+    }
+
+    /* Mark the slot occupied first. This cannot fail post-validation, so the
+     * state change below is atomic with the session record. */
+    if (slot_occupy(sys, slot_index, vehicle_id) != STATUS_OK) {
+        return STATUS_ERROR;
     }
 
     ParkingSession *s = &sys->sessions[sys->session_count];
@@ -49,12 +59,6 @@ Status session_start(ParkingSystem *sys, Id vehicle_id, Id slot_id,
 
     *out_id = s->id;
     sys->session_count++;
-
-    /* Mark the slot occupied by this vehicle. */
-    size_t slot_index = 0;
-    if (slot_find_by_id(sys, slot_id, &slot_index) == STATUS_OK) {
-        slot_occupy(sys, slot_index, vehicle_id);
-    }
     return STATUS_OK;
 }
 
@@ -69,10 +73,15 @@ Status session_end(ParkingSystem *sys, Id vehicle_id, time_t end_time) {
     }
 
     ParkingSession *s = &sys->sessions[index];
+    if (end_time < s->start_time) {
+        return STATUS_INVALID_ARGUMENT;
+    }
+
     s->end_time = end_time;
     s->active = 0;
 
-    /* Release the slot. */
+    /* Release the slot. A best-effort release: the session is ended regardless
+     * so a previously-released slot does not fail the exit. */
     size_t slot_index = 0;
     if (slot_find_by_id(sys, s->slot_id, &slot_index) == STATUS_OK) {
         slot_release(sys, slot_index);
