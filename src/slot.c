@@ -26,7 +26,18 @@ Status slot_init(ParkingSystem *sys, int capacity) {
     if (sys == NULL || capacity <= 0) {
         return STATUS_INVALID_ARGUMENT;
     }
-    /* Free any previously allocated slots so re-initialisation cannot leak. */
+    /* If slots are already initialised, refuse to erase occupied state.
+     * Re-initialising would wipe slot occupancy and desynchronise any active
+     * sessions that reference those slots. An already-initialised, fully-free
+     * system is left untouched. */
+    if (sys->slots != NULL && sys->slot_count > 0) {
+        for (size_t i = 0; i < sys->slot_count; i++) {
+            if (!sys->slots[i].is_available) {
+                return STATUS_CONFLICT;
+            }
+        }
+        return STATUS_OK;
+    }
     free(sys->slots);
     sys->slots = calloc((size_t)capacity, sizeof(ParkingSlot));
     if (sys->slots == NULL) {
