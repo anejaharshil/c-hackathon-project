@@ -41,7 +41,9 @@ typedef enum {
     PARKING_FULL,
     PARKING_LIMIT,
     PARKING_NO_MEMORY,
-    PARKING_INVALID
+    PARKING_INVALID,
+    PARKING_INVALID_REGISTRATION,
+    PARKING_INVALID_ID
 } ParkingStatus;
 
 /* Members are ordered widest-first so the compiler adds no padding. */

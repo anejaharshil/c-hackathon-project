@@ -66,20 +66,20 @@ static void test_registration(void) {
     ParkingSystem *sys = make_system(4);
     Id id = ID_NONE;
 
-    CHECK(parking_register(sys, "STU001", "Alice", "S100", USER_STUDENT,
-                           VEHICLE_CAR, &id) == PARKING_OK,
+    CHECK(parking_register(sys, "UP16AA0001", "Alice", "590000001",
+                           USER_STUDENT, VEHICLE_CAR, &id) == PARKING_OK,
           "student registration succeeds");
     CHECK(id != ID_NONE, "registration returns a stable ID");
-    CHECK(parking_register(sys, "STF001", "Bob", "T200", USER_STAFF,
-                           VEHICLE_CAR, NULL) == PARKING_OK,
+    CHECK(parking_register(sys, "UP16AA0002", "Bob", "123456789",
+                           USER_STAFF, VEHICLE_CAR, NULL) == PARKING_OK,
           "staff registration succeeds");
-    CHECK(parking_register(sys, "VIS001", "Carol", NULL, USER_VISITOR,
-                           VEHICLE_CAR, NULL) == PARKING_OK,
+    CHECK(parking_register(sys, "UP16AA0003", "Carol", NULL,
+                           USER_VISITOR, VEHICLE_CAR, NULL) == PARKING_OK,
           "visitor registration succeeds without an institutional ID");
 
-    Vehicle *student = parking_find_vehicle(sys, "STU001");
+    Vehicle *student = parking_find_vehicle(sys, "UP16AA0001");
     CHECK(student != NULL && student->user_type == USER_STUDENT &&
-              strcmp(student->institution_id, "S100") == 0,
+              strcmp(student->institution_id, "590000001") == 0,
           "student record stores category and ID");
 
     int zeroed = 1;
@@ -100,24 +100,48 @@ static void test_registration(void) {
     }
     CHECK(zeroed, "unused string bytes are zeroed");
 
-    CHECK(parking_register(sys, "STU001", "Duplicate", "S101", USER_STUDENT,
-                           VEHICLE_CAR, NULL) == PARKING_DUPLICATE,
+    CHECK(parking_register(sys, "UP16AA0001", "Duplicate", "590000002",
+                           USER_STUDENT, VEHICLE_CAR, NULL) == PARKING_DUPLICATE,
           "duplicate registration is rejected");
-    CHECK(parking_register(sys, "STU002", "Duplicate", "S100", USER_STUDENT,
-                           VEHICLE_CAR, NULL) == PARKING_DUPLICATE,
+    CHECK(parking_register(sys, "UP16AA0004", "Duplicate", "590000001",
+                           USER_STUDENT, VEHICLE_CAR, NULL) == PARKING_DUPLICATE,
           "duplicate student ID is rejected");
-    CHECK(parking_register(sys, "STF002", "Different", "S100", USER_STAFF,
-                           VEHICLE_CAR, NULL) == PARKING_OK,
+    CHECK(parking_register(sys, "UP16AA0005", "Different", "590000001",
+                           USER_STAFF, VEHICLE_CAR, NULL) == PARKING_OK,
           "same institutional ID may exist in another category");
-    CHECK(parking_register(sys, "", "Empty", "S103", USER_STUDENT,
-                           VEHICLE_CAR, NULL) == PARKING_INVALID,
+    CHECK(parking_register(sys, "", "Empty", "590000003",
+                           USER_STUDENT, VEHICLE_CAR, NULL) == PARKING_INVALID_REGISTRATION,
           "empty registration is rejected");
-    CHECK(parking_register(sys, "BAD001", "Bad", "S104", (UserType)99,
-                           VEHICLE_CAR, NULL) == PARKING_INVALID,
+    CHECK(parking_register(sys, "UP16AA0006", "Bad", "590000004",
+                           (UserType)99, VEHICLE_CAR, NULL) == PARKING_INVALID,
           "invalid user category is rejected");
-    CHECK(parking_register(sys, "BAD002", "Bad", "S105", USER_STUDENT,
-                           (VehicleType)99, NULL) == PARKING_INVALID,
+    CHECK(parking_register(sys, "UP16AA0007", "Bad", "590000005",
+                           USER_STUDENT, (VehicleType)99, NULL) == PARKING_INVALID,
           "invalid vehicle type is rejected");
+    CHECK(parking_register(sys, "up16aa0070", "Lower", "590000070",
+                           USER_STUDENT, VEHICLE_CAR, NULL) == PARKING_OK,
+          "lowercase registration is accepted");
+    CHECK(parking_find_vehicle(sys, "up16aa0070") != NULL,
+          "lowercase lookup finds an uppercase stored registration");
+    CHECK(parking_register(sys, "UP16AA0070", "Duplicate", "590000071",
+                           USER_STUDENT, VEHICLE_CAR, NULL) == PARKING_DUPLICATE,
+          "normalized duplicate registration is rejected");
+    CHECK(parking_register(sys, "UR78HJ7834", "Bad", "590000072",
+                           USER_STUDENT, VEHICLE_CAR, NULL) ==
+          PARKING_INVALID_REGISTRATION,
+          "invalid state code is rejected at registration");
+    CHECK(parking_register(sys, "UP99AB1234", "Bad", "590000073",
+                           USER_STUDENT, VEHICLE_CAR, NULL) ==
+          PARKING_INVALID_REGISTRATION,
+          "invalid RTO district is rejected at registration");
+    CHECK(parking_register(sys, "UP16AA0074", "Bad", "590100000",
+                           USER_STUDENT, VEHICLE_CAR, NULL) ==
+          PARKING_INVALID_ID,
+          "SAP ID outside the allowed range is rejected");
+    CHECK(parking_register(sys, "UP16AA0075", "Bad", "12345678",
+                           USER_STAFF, VEHICLE_CAR, NULL) ==
+          PARKING_INVALID_ID,
+          "eight-digit teacher ID is rejected");
 
     parking_destroy(sys);
 }
@@ -147,55 +171,55 @@ static void test_billing(void) {
 
 static void test_entry_and_exit(void) {
     ParkingSystem *sys = make_system(4);
-    add_vehicle(sys, "STU001", USER_STUDENT, "S100");
-    add_vehicle(sys, "STF001", USER_STAFF, "T200");
-    add_vehicle(sys, "VIS001", USER_VISITOR, NULL);
+    add_vehicle(sys, "UP16AA0001", USER_STUDENT, "590000001");
+    add_vehicle(sys, "UP16AA0002", USER_STAFF, "123456789");
+    add_vehicle(sys, "UP16AA0003", USER_VISITOR, NULL);
     time_t base = 1700000000;
     Id slot_id = ID_NONE;
     Receipt receipt;
 
-    CHECK(parking_enter(sys, "STU001", base, &slot_id) == PARKING_OK &&
+    CHECK(parking_enter(sys, "UP16AA0001", base, &slot_id) == PARKING_OK &&
               slot_id != ID_NONE,
           "automatic slot allocation succeeds");
     CHECK(parking_occupied_slots(sys) == 1,
           "occupancy updates after entry");
     CHECK(parking_active_sessions(sys) == 1,
           "active session count updates after entry");
-    CHECK(parking_enter(sys, "STU001", base, NULL) == PARKING_ALREADY_PARKED,
+    CHECK(parking_enter(sys, "UP16AA0001", base, NULL) == PARKING_ALREADY_PARKED,
           "duplicate entry is rejected");
-    CHECK(parking_enter(sys, "UNKNOWN", base, NULL) == PARKING_NOT_FOUND,
+    CHECK(parking_enter(sys, "UP16ZZ9999", base, NULL) == PARKING_NOT_FOUND,
           "entry for an unregistered vehicle is rejected");
 
-    CHECK(parking_exit(sys, "STU001", base + 1800, &receipt) == PARKING_OK,
+    CHECK(parking_exit(sys, "UP16AA0001", base + 1800, &receipt) == PARKING_OK,
           "student exit succeeds");
     CHECK(receipt.charge == 0, "student receipt shows Rs. 0");
     CHECK(receipt.duration_seconds == 1800, "exit duration is recorded");
     CHECK(parking_occupied_slots(sys) == 0, "slot is released after exit");
     CHECK(parking_active_sessions(sys) == 0,
           "active session count clears after exit");
-    Vehicle *student = parking_find_vehicle(sys, "STU001");
+    Vehicle *student = parking_find_vehicle(sys, "UP16AA0001");
     CHECK(parking_sessions_for(sys, student->id) == 1,
           "completed session remains in history");
-    CHECK(parking_exit(sys, "UNKNOWN", base, &receipt) == PARKING_NOT_FOUND,
+    CHECK(parking_exit(sys, "UP16ZZ9999", base, &receipt) == PARKING_NOT_FOUND,
           "exit for an unregistered vehicle is rejected");
-    CHECK(parking_exit(sys, "STU001", base + 1800, &receipt) ==
+    CHECK(parking_exit(sys, "UP16AA0001", base + 1800, &receipt) ==
               PARKING_NOT_PARKED,
           "exit without an active session is rejected");
 
-    CHECK(parking_enter(sys, "STF001", base, NULL) == PARKING_OK,
+    CHECK(parking_enter(sys, "UP16AA0002", base, NULL) == PARKING_OK,
           "staff entry succeeds");
-    CHECK(parking_exit(sys, "STF001", base + 4000, &receipt) == PARKING_OK &&
+    CHECK(parking_exit(sys, "UP16AA0002", base + 4000, &receipt) == PARKING_OK &&
               receipt.charge == 0,
           "staff receipt shows Rs. 0");
 
-    CHECK(parking_enter(sys, "VIS001", base, NULL) == PARKING_OK,
+    CHECK(parking_enter(sys, "UP16AA0003", base, NULL) == PARKING_OK,
           "visitor entry succeeds");
-    CHECK(parking_exit(sys, "VIS001", base + 1800, &receipt) == PARKING_OK &&
+    CHECK(parking_exit(sys, "UP16AA0003", base + 1800, &receipt) == PARKING_OK &&
               receipt.charge == 20,
           "visitor pays Rs. 20 after thirty minutes");
-    CHECK(parking_enter(sys, "VIS001", base, NULL) == PARKING_OK,
+    CHECK(parking_enter(sys, "UP16AA0003", base, NULL) == PARKING_OK,
           "visitor may re-enter after exit");
-    CHECK(parking_exit(sys, "VIS001", base + 5400, &receipt) == PARKING_OK &&
+    CHECK(parking_exit(sys, "UP16AA0003", base + 5400, &receipt) == PARKING_OK &&
               receipt.charge == 40,
           "visitor pays Rs. 40 after ninety minutes");
     CHECK(parking_total_revenue(sys) == 60,
@@ -206,15 +230,15 @@ static void test_entry_and_exit(void) {
 
 static void test_capacity(void) {
     ParkingSystem *sys = make_system(2);
-    add_vehicle(sys, "CAR001", USER_STUDENT, "S1");
-    add_vehicle(sys, "CAR002", USER_STUDENT, "S2");
-    add_vehicle(sys, "CAR003", USER_STUDENT, "S3");
+    add_vehicle(sys, "UP16AA0010", USER_STUDENT, "590000010");
+    add_vehicle(sys, "UP16AA0011", USER_STUDENT, "590000011");
+    add_vehicle(sys, "UP16AA0012", USER_STUDENT, "590000012");
 
-    CHECK(parking_enter(sys, "CAR001", 1, NULL) == PARKING_OK,
+    CHECK(parking_enter(sys, "UP16AA0010", 1, NULL) == PARKING_OK,
           "first vehicle enters a two-slot car park");
-    CHECK(parking_enter(sys, "CAR002", 1, NULL) == PARKING_OK,
+    CHECK(parking_enter(sys, "UP16AA0011", 1, NULL) == PARKING_OK,
           "second vehicle enters a two-slot car park");
-    CHECK(parking_enter(sys, "CAR003", 1, NULL) == PARKING_FULL,
+    CHECK(parking_enter(sys, "UP16AA0012", 1, NULL) == PARKING_FULL,
           "entry is rejected when the car park is full");
 
     parking_destroy(sys);
@@ -227,8 +251,8 @@ static void test_growth(void) {
     int all_ok = 1;
 
     for (int i = 0; i < 200; i++) {
-        snprintf(registration, sizeof registration, "G%03d", i);
-        snprintf(institution, sizeof institution, "S%03d", i);
+        snprintf(registration, sizeof registration, "UP16AA%04d", i);
+        snprintf(institution, sizeof institution, "590000%03d", i);
         if (parking_register(sys, registration, "Owner", institution,
                              USER_STUDENT, VEHICLE_CAR,
                              NULL) != PARKING_OK) {
@@ -239,7 +263,7 @@ static void test_growth(void) {
     CHECK(all_ok, "two hundred registrations succeed");
     CHECK(sys->vehicle_count == 200,
           "vehicle array grows dynamically with realloc");
-    CHECK(parking_find_vehicle(sys, "G199") != NULL,
+    CHECK(parking_find_vehicle(sys, "UP16AA0199") != NULL,
           "records added after growth remain searchable");
 
     parking_destroy(sys);
@@ -248,10 +272,10 @@ static void test_growth(void) {
 static void test_persistence(void) {
     remove_test_file();
     ParkingSystem *sys = make_system(3);
-    Id student_id = add_vehicle(sys, "STU001", USER_STUDENT, "S100");
-    add_vehicle(sys, "VIS001", USER_VISITOR, NULL);
+    Id student_id = add_vehicle(sys, "UP16AA0001", USER_STUDENT, "590000001");
+    add_vehicle(sys, "UP16AA0003", USER_VISITOR, NULL);
 
-    CHECK(parking_enter(sys, "STU001", 1700000000, NULL) == PARKING_OK,
+    CHECK(parking_enter(sys, "UP16AA0001", 1700000000, NULL) == PARKING_OK,
           "active session created before save");
     CHECK(storage_save(sys, TEST_PATH) == PARKING_OK, "save succeeds");
 
@@ -263,11 +287,11 @@ static void test_persistence(void) {
           "active session is restored");
     CHECK(loaded->slots[0].available == 0, "slot occupancy is restored");
 
-    Vehicle *student = parking_find_vehicle(loaded, "STU001");
+    Vehicle *student = parking_find_vehicle(loaded, "UP16AA0001");
     CHECK(student != NULL && student->id == student_id,
           "vehicle IDs are stable across a restart");
     CHECK(student != NULL && strcmp(student->owner, "Test Owner") == 0 &&
-              strcmp(student->institution_id, "S100") == 0 &&
+              strcmp(student->institution_id, "590000001") == 0 &&
               student->vehicle_type == VEHICLE_CAR &&
               student->user_type == USER_STUDENT,
           "vehicle fields survive a restart");
@@ -277,20 +301,20 @@ static void test_persistence(void) {
           "active session count survives a restart");
 
     Receipt receipt;
-    CHECK(parking_exit(loaded, "STU001", 1700001800, &receipt) == PARKING_OK &&
+    CHECK(parking_exit(loaded, "UP16AA0001", 1700001800, &receipt) == PARKING_OK &&
               receipt.charge == 0,
           "a restored active session can exit");
     CHECK(loaded->slots[0].available == 1,
           "a restored slot is released on exit");
     Id reused = ID_NONE;
-    CHECK(parking_enter(loaded, "VIS001", 1700001800, &reused) == PARKING_OK &&
+    CHECK(parking_enter(loaded, "UP16AA0003", 1700001800, &reused) == PARKING_OK &&
               reused == loaded->slots[0].id,
           "a restored system reuses the released slot");
-    CHECK(parking_exit(loaded, "VIS001", 1700003600, &receipt) == PARKING_OK &&
+    CHECK(parking_exit(loaded, "UP16AA0003", 1700003600, &receipt) == PARKING_OK &&
               receipt.charge == 20,
           "a restored system bills a visitor");
 
-    Id next_id = add_vehicle(loaded, "NEW001", USER_VISITOR, NULL);
+    Id next_id = add_vehicle(loaded, "UP16AA0020", USER_VISITOR, NULL);
     CHECK(next_id > student_id, "ID counter continues after load");
 
     parking_destroy(loaded);
@@ -301,12 +325,12 @@ static void test_persistence(void) {
 static void test_revenue_persistence(void) {
     remove_test_file();
     ParkingSystem *sys = make_system(2);
-    add_vehicle(sys, "VIS001", USER_VISITOR, NULL);
+    add_vehicle(sys, "UP16AA0003", USER_VISITOR, NULL);
     Receipt receipt;
 
-    CHECK(parking_enter(sys, "VIS001", 1700000000, NULL) == PARKING_OK,
+    CHECK(parking_enter(sys, "UP16AA0003", 1700000000, NULL) == PARKING_OK,
           "visitor entry before revenue save");
-    CHECK(parking_exit(sys, "VIS001", 1700005400, &receipt) == PARKING_OK,
+    CHECK(parking_exit(sys, "UP16AA0003", 1700005400, &receipt) == PARKING_OK,
           "visitor exit before revenue save");
     CHECK(parking_total_revenue(sys) == 40, "revenue computed before save");
     CHECK(storage_save(sys, TEST_PATH) == PARKING_OK, "save revenue succeeds");
@@ -330,7 +354,7 @@ static void test_corruption(void) {
     }
 
     ParkingSystem *sys = make_system(2);
-    add_vehicle(sys, "SAFE01", USER_STUDENT, "S1");
+    add_vehicle(sys, "UP16AA0030", USER_STUDENT, "590000030");
 
     CHECK(storage_load(sys, TEST_PATH) == PARKING_INVALID,
           "corrupt file is rejected");
@@ -395,33 +419,33 @@ static void test_boundaries(void) {
     memset(long_text, 'A', sizeof long_text - 1);
     long_text[sizeof long_text - 1] = '\0';
 
-    CHECK(parking_register(sys, long_text, "Owner", "S1", USER_STUDENT,
-                           VEHICLE_CAR, NULL) == PARKING_INVALID,
+    CHECK(parking_register(sys, long_text, "Owner", "590000001", USER_STUDENT,
+                           VEHICLE_CAR, NULL) == PARKING_INVALID_REGISTRATION,
           "overlong registration is rejected");
-    CHECK(parking_register(sys, "OK001", NULL, "S1", USER_STUDENT,
+    CHECK(parking_register(sys, "UP16AA0040", NULL, "590000001", USER_STUDENT,
                            VEHICLE_CAR, NULL) == PARKING_INVALID,
           "missing owner is rejected");
-    CHECK(parking_register(sys, "OK002", "Owner", NULL, USER_STUDENT,
+    CHECK(parking_register(sys, "UP16AA0041", "Owner", NULL, USER_STUDENT,
                            VEHICLE_CAR, NULL) == PARKING_INVALID,
           "missing student ID is rejected");
 
-    add_vehicle(sys, "FREE01", USER_STUDENT, "S2");
-    add_vehicle(sys, "FREE02", USER_STUDENT, "S3");
+    add_vehicle(sys, "UP16AA0042", USER_STUDENT, "590000042");
+    add_vehicle(sys, "UP16AA0043", USER_STUDENT, "590000043");
     Id slot = ID_NONE;
     Receipt receipt;
-    CHECK(parking_enter(sys, "FREE01", 1, &slot) == PARKING_OK,
+    CHECK(parking_enter(sys, "UP16AA0042", 1, &slot) == PARKING_OK,
           "entry before slot reuse");
-    CHECK(parking_exit(sys, "FREE01", 2, &receipt) == PARKING_OK,
+    CHECK(parking_exit(sys, "UP16AA0042", 2, &receipt) == PARKING_OK,
           "exit before slot reuse");
     Id reused = ID_NONE;
-    CHECK(parking_enter(sys, "FREE02", 3, &reused) == PARKING_OK &&
+    CHECK(parking_enter(sys, "UP16AA0043", 3, &reused) == PARKING_OK &&
               reused == slot,
           "released slot is reused");
-    CHECK(parking_exit(sys, "UNKNOWN", 4, &receipt) == PARKING_NOT_FOUND,
+    CHECK(parking_exit(sys, "UP16ZZ9999", 4, &receipt) == PARKING_NOT_FOUND,
           "exit for an unknown vehicle is rejected");
 
     sys->next_id = LLONG_MAX;
-    CHECK(parking_register(sys, "LIMIT1", "Owner", "S4", USER_STUDENT,
+    CHECK(parking_register(sys, "UP16AA0044", "Owner", "590000044", USER_STUDENT,
                            VEHICLE_CAR, NULL) == PARKING_LIMIT,
           "ID exhaustion is rejected");
     parking_destroy(sys);
@@ -477,6 +501,9 @@ static void test_registration_validation(void) {
     CHECK(!registration_normalize(normalized, sizeof normalized,
                                   "UR78HJ7834"),
           "invalid registration is not normalized");
+    CHECK(!registration_normalize(normalized, sizeof normalized,
+                                  "UP16FU56745"),
+          "eleven-character input is not normalized");
 }
 
 static void test_id_validation(void) {
@@ -505,7 +532,7 @@ static void test_id_validation(void) {
 static void test_persistence_failures(void) {
     remove_test_file();
     ParkingSystem *sys = make_system(2);
-    add_vehicle(sys, "FAIL01", USER_STUDENT, "S1");
+    add_vehicle(sys, "UP16AA0050", USER_STUDENT, "590000050");
 
     CHECK(storage_save(sys, "tests/no_such_directory/file.dat") == PARKING_ERROR,
           "save to a missing directory fails");
@@ -597,9 +624,9 @@ static void test_persistence_failures(void) {
 static void test_inconsistent_state(void) {
     remove_test_file();
     ParkingSystem *sys = make_system(2);
-    add_vehicle(sys, "REF001", USER_STUDENT, "S1");
-    add_vehicle(sys, "REF002", USER_STUDENT, "S2");
-    CHECK(parking_enter(sys, "REF001", 1700000000, NULL) == PARKING_OK,
+    add_vehicle(sys, "UP16AA0060", USER_STUDENT, "590000060");
+    add_vehicle(sys, "UP16AA0061", USER_STUDENT, "590000061");
+    CHECK(parking_enter(sys, "UP16AA0060", 1700000000, NULL) == PARKING_OK,
           "entry for consistency tests");
 
     sys->slots[0].vehicle_id = 9999;

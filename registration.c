@@ -1,6 +1,5 @@
 // Header Files
 #include "registration.h"
-#include <ctype.h>
 #include <string.h>
 #include <stdlib.h>
 
@@ -52,13 +51,16 @@ static const RtoState RTO_STATES[] = {
 // Function Declarations
 static const char *districts_for(const char *state);
 static int district_is_listed(const char *districts, const char *code);
+static int my_isupper(char c);
+static int my_isdigit(char c);
+static char my_toupper(char c);
+static int my_isspace(char c);
 
 // Functions
-/* definitions */
-
 static const char *districts_for(const char *state) {
     for (int i = 0; i < (int)(sizeof RTO_STATES / sizeof RTO_STATES[0]); i++) {
-        if (strncmp(RTO_STATES[i].state, state, 2) == 0) {
+        if (RTO_STATES[i].state[0] == state[0] &&
+            RTO_STATES[i].state[1] == state[1]) {
             return RTO_STATES[i].districts;
         }
     }
@@ -71,14 +73,41 @@ static int district_is_listed(const char *districts, const char *code) {
     }
     const char *p = districts;
     while (*p) {
-        while (*p == ' ') p++;
-        if (!*p) break;
-        if (strncmp(p, code, 2) == 0 && (p[2] == ' ' || p[2] == '\0')) {
+        while (*p == ' ') {
+            p++;
+        }
+        if (!*p) {
+            break;
+        }
+        if (p[0] == code[0] && p[1] == code[1] &&
+            (p[2] == ' ' || p[2] == '\0')) {
             return 1;
         }
-        while (*p && *p != ' ') p++;
+        while (*p && *p != ' ') {
+            p++;
+        }
     }
     return 0;
+}
+
+static int my_isupper(char c) {
+    return c >= 'A' && c <= 'Z';
+}
+
+static int my_isdigit(char c) {
+    return c >= '0' && c <= '9';
+}
+
+static char my_toupper(char c) {
+    if (c >= 'a' && c <= 'z') {
+        return (char)(c - 'a' + 'A');
+    }
+    return c;
+}
+
+static int my_isspace(char c) {
+    return c == ' ' || c == '\t' || c == '\n' ||
+           c == '\v' || c == '\f' || c == '\r';
 }
 
 int registration_is_valid(const char *text) {
@@ -89,28 +118,28 @@ int registration_is_valid(const char *text) {
     if (len != REGISTRATION_LENGTH) {
         return 0;
     }
-    // Check pattern: [A-Z]{2}[0-9]{2}[A-Z]{2}[0-9]{4}
+    /* Check pattern: [A-Z]{2}[0-9]{2}[A-Z]{2}[0-9]{4} */
     for (int i = 0; i < 2; i++) {
-        if (!isupper((unsigned char)text[i])) {
+        if (!my_isupper(text[i])) {
             return 0;
         }
     }
     for (int i = 2; i < 4; i++) {
-        if (!isdigit((unsigned char)text[i])) {
+        if (!my_isdigit(text[i])) {
             return 0;
         }
     }
     for (int i = 4; i < 6; i++) {
-        if (!isupper((unsigned char)text[i])) {
+        if (!my_isupper(text[i])) {
             return 0;
         }
     }
     for (int i = 6; i < 10; i++) {
-        if (!isdigit((unsigned char)text[i])) {
+        if (!my_isdigit(text[i])) {
             return 0;
         }
     }
-    // Find state entry and check district
+    /* Find state entry and check district */
     const char *districts = districts_for(&text[0]);
     if (districts == NULL) {
         return 0;
@@ -122,43 +151,42 @@ int registration_normalize(char *out, size_t size, const char *text) {
     if (out == NULL || text == NULL || size < 11) {
         return 0;
     }
-    // Trim leading whitespace
+    /* Trim leading whitespace */
     const char *src = text;
-    while (*src && isspace((unsigned char)*src)) {
+    while (*src && my_isspace(*src)) {
         src++;
     }
-    // Trim trailing whitespace: find end
+    /* Trim trailing whitespace: find end */
     size_t raw_len = strlen(src);
     const char *end = src + raw_len;
-    while (end > src && isspace((unsigned char)*(end - 1))) {
+    while (end > src && my_isspace(*(end - 1))) {
         end--;
     }
-    // Uppercase and copy to a temporary buffer, validating at the same time
-    char normalized[11]; // exactly 10 chars + NUL
+    /* Copy and uppercase into a temporary buffer */
+    char normalized[11]; /* exactly 10 chars + NUL */
     size_t i;
     for (i = 0; i < 10 && src + i < end; i++) {
-        char c = (unsigned char)src[i];
-        // Check if it's a letter or digit; after trimming, we expect exactly 10 chars
-        normalized[i] = toupper(c);
+        normalized[i] = my_toupper(src[i]);
     }
     normalized[10] = '\0';
-    // But we need to validate the format. Let's check length matches exactly.
-    // After trimming, if the length is not 10, it's invalid.
-    if (i != 10) {
+    /* After trimming, the length must be exactly 10 and nothing may remain */
+    if (i != 10 || src + i < end) {
         out[0] = '\0';
         return 0;
     }
-    // Now validate using registration_is_valid
+    /* Validate the normalized result */
     if (!registration_is_valid(normalized)) {
         out[0] = '\0';
         return 0;
     }
-    // NUL-terminate out up to size-1
-    size_t copy_len = strlen(normalized) + 1; // +1 for NUL
+    /* Copy into out, NUL-terminated, bounded by size */
+    size_t copy_len = strlen(normalized) + 1; /* +1 for NUL */
     if (copy_len > size) {
         copy_len = size;
     }
-    memcpy(out, normalized, copy_len);
+    for (size_t j = 0; j < copy_len; j++) {
+        out[j] = normalized[j];
+    }
     return 1;
 }
 
@@ -171,11 +199,11 @@ int sap_id_is_valid(const char *text) {
         return 0;
     }
     for (int i = 0; i < 9; i++) {
-        if (!isdigit((unsigned char)text[i])) {
+        if (!my_isdigit(text[i])) {
             return 0;
         }
     }
-    // Check range: 590000000 - 590099999
+    /* Check range: 590000000 - 590099999 */
     long val = atol(text);
     return val >= SAP_MIN && val <= SAP_MAX;
 }
@@ -189,7 +217,7 @@ int teacher_id_is_valid(const char *text) {
         return 0;
     }
     for (int i = 0; i < 9; i++) {
-        if (!isdigit((unsigned char)text[i])) {
+        if (!my_isdigit(text[i])) {
             return 0;
         }
     }

@@ -1,4 +1,5 @@
 #include "parking.h"
+#include "registration.h"
 
 #include <limits.h>
 #include <stdint.h>
@@ -131,16 +132,34 @@ ParkingStatus parking_register(ParkingSystem *sys, const char *registration,
                                const char *owner, const char *institution_id,
                                UserType user_type, VehicleType vehicle_type,
                                Id *out_id) {
-    if (sys == NULL || !string_ok(registration, MAX_REG_LEN) ||
-        !string_ok(owner, MAX_OWNER_LEN) || !user_type_ok(user_type) ||
-        !vehicle_type_ok(vehicle_type)) {
+    char normalized[16];
+
+    if (sys == NULL || !string_ok(owner, MAX_OWNER_LEN) ||
+        !user_type_ok(user_type) || !vehicle_type_ok(vehicle_type)) {
         return PARKING_INVALID;
     }
     if (user_type != USER_VISITOR &&
         !string_ok(institution_id, MAX_ID_LEN)) {
         return PARKING_INVALID;
     }
-    if (registration_taken(sys, registration)) {
+
+    /* Validate and normalize the vehicle registration. */
+    if (!registration_normalize(normalized, sizeof normalized, registration)) {
+        return PARKING_INVALID_REGISTRATION;
+    }
+
+    /* Validate the category-specific institutional ID. */
+    if (user_type == USER_STUDENT) {
+        if (!sap_id_is_valid(institution_id)) {
+            return PARKING_INVALID_ID;
+        }
+    } else if (user_type == USER_STAFF) {
+        if (!teacher_id_is_valid(institution_id)) {
+            return PARKING_INVALID_ID;
+        }
+    }
+
+    if (registration_taken(sys, normalized)) {
         return PARKING_DUPLICATE;
     }
     if (user_type != USER_VISITOR &&
@@ -161,8 +180,7 @@ ParkingStatus parking_register(ParkingSystem *sys, const char *registration,
     vehicle->id = sys->next_id++;
     vehicle->user_type = user_type;
     vehicle->vehicle_type = vehicle_type;
-    copy_text(vehicle->registration, sizeof vehicle->registration,
-              registration);
+    copy_text(vehicle->registration, sizeof vehicle->registration, normalized);
     copy_text(vehicle->owner, sizeof vehicle->owner, owner);
     copy_text(vehicle->institution_id, sizeof vehicle->institution_id,
               user_type == USER_VISITOR ? "-" : institution_id);
@@ -175,8 +193,15 @@ ParkingStatus parking_register(ParkingSystem *sys, const char *registration,
 }
 
 Vehicle *parking_find_vehicle(ParkingSystem *sys, const char *registration) {
+    char normalized[16];
+
     if (sys == NULL || registration == NULL) {
         return NULL;
+    }
+    /* Try a normalized lookup first; fall back to the raw query so
+     * legacy records stored before validation remain reachable. */
+    if (registration_normalize(normalized, sizeof normalized, registration)) {
+        registration = normalized;
     }
     for (size_t i = 0; i < sys->vehicle_count; i++) {
         if (strcmp(sys->vehicles[i].registration, registration) == 0) {
