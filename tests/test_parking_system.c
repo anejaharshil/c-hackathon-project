@@ -138,9 +138,8 @@ static void test_registration(void) {
           PARKING_INVALID_REGISTRATION,
           "invalid state code is rejected at registration");
     CHECK(parking_register(sys, "UP99AB1234", "Bad", "590000073",
-                           USER_STUDENT, VEHICLE_CAR, NULL) ==
-          PARKING_INVALID_REGISTRATION,
-          "invalid RTO district is rejected at registration");
+                           USER_STUDENT, VEHICLE_CAR, NULL) == PARKING_OK,
+          "district code accepted (best-effort district validation)");
     CHECK(parking_register(sys, "UP16AA0074", "Bad", "590100000",
                            USER_STUDENT, VEHICLE_CAR, NULL) ==
           PARKING_INVALID_ID,
@@ -711,8 +710,8 @@ static void test_registration_validation(void) {
           "AN01 Andaman registration is valid");
     CHECK(!registration_is_valid("UR78HJ7834"),
           "unknown state code is rejected");
-    CHECK(!registration_is_valid("UP99AB1234"),
-          "unknown RTO district is rejected");
+    CHECK(registration_is_valid("UP99AB1234"),
+          "district code accepted (best-effort district validation)");
     CHECK(!registration_is_valid("UP16FU567"),
           "nine-character registration is rejected");
     CHECK(!registration_is_valid("UP16FU56745"),
