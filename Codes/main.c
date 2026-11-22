@@ -103,12 +103,10 @@ static int my_isspace(char c) {
 }
 
 static void clear_screen(void) {
-#ifdef _WIN32
-    (void)system("cls");
-#else
+    /* ANSI escape sequence works on modern terminals including Windows 10+,
+     * avoiding a shell spawn that system("cls") would require. */
     fputs("\033[2J\033[H", stdout);
     fflush(stdout);
-#endif
 }
 
 static int read_line(const char *prompt, char *buffer, size_t size) {
