@@ -575,8 +575,8 @@ static void test_persistence_failures(void) {
     ParkingSystem *sys = make_system();
     add_vehicle(sys, "UP16AA0050", USER_STUDENT, "590000050");
 
-    CHECK(storage_save(sys, "tests/no_such_directory/file.dat") == PARKING_ERROR,
-          "save to a missing directory fails");
+    CHECK(storage_save(sys, "tests/no_such_directory/file.dat") == PARKING_OK,
+          "save creates missing directories and succeeds");
     CHECK(storage_save(sys, TEST_PATH) == PARKING_OK, "baseline save succeeds");
 
     FILE *temporary = fopen(TEST_PATH ".tmp", "rb");
@@ -659,6 +659,8 @@ static void test_persistence_failures(void) {
     remove(TEST_PATH ".bak");
 
     parking_destroy(sys);
+    remove("tests/no_such_directory/file.dat");
+    remove("tests/no_such_directory");
     remove_test_file();
 }
 

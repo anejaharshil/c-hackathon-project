@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 // Global Variables
 // (none: all file-scope state is local to functions)
@@ -43,6 +44,23 @@ static int relationships_valid(const ParkingSystem *sys);
 ParkingStatus storage_save(const ParkingSystem *sys, const char *path) {
     if (sys == NULL || path == NULL) {
         return PARKING_INVALID;
+    }
+
+    /* Ensure the parent directory exists so the temp file can be created. */
+    {
+        char dir[512];
+        size_t path_length = strlen(path);
+        if (path_length >= sizeof dir) {
+            return PARKING_ERROR;
+        }
+        memcpy(dir, path, path_length + 1);
+        char *slash = strrchr(dir, '/');
+        if (slash != NULL) {
+            *slash = '\0';
+            if (mkdir(dir, 0755) != 0 && errno != EEXIST) {
+                return PARKING_ERROR;
+            }
+        }
     }
 
     size_t path_length = strlen(path);
