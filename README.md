@@ -67,13 +67,17 @@ main menu.
 
 Vehicle registration numbers follow the Indian format: exactly 10 characters,
 `SS DD LL NNNN`, where `SS` is a two-letter state/union-territory code, `DD` is
-a two-digit RTO district code valid for that state, `LL` is a two-letter series,
-and `NNNN` is a four-digit number. For example, `UP16FU5674` is valid (Uttar
-Pradesh, Noida) but `UR78HJ7834` is not (`UR` is not an Indian state code) and
-`UP99AB1234` is not (`UP99` is not an assigned RTO district).
+a two-digit RTO district code, `LL` is a two-letter series, and `NNNN` is a
+four-digit number. For example, `UP16FU5674` is valid (Uttar Pradesh, Noida)
+but `UR78HJ7834` is not (`UR` is not an Indian state code).
 
 Input is trimmed and converted to uppercase before validation, so `up16fu5674`
 and ` UP16Fu5674 ` are both accepted and stored as `UP16FU5674`.
+
+State codes are validated against a known list. District codes are accepted on
+faith (best-effort): RTO district tables change over time and a locally
+maintained copy cannot be exhaustive, so an otherwise well-formed plate is not
+rejected merely because its district code is absent from the table.
 
 Institutional IDs are unique within their own category. Vehicle registration
 numbers are unique across the whole system. Each vehicle also records a type
@@ -91,9 +95,10 @@ header and in the parking status screen.
 
 Entry assigns the first free slot in the matching section and vehicle-type
 pool and records the current time. A vehicle cannot have two active sessions,
-and a slot cannot hold two vehicles. Exit releases the slot and prints a
-receipt containing the vehicle, owner, category, slot, entry time, exit time,
-duration and charge.
+and a slot cannot hold two vehicles. Bicycles have no registration number;
+their entry and exit are looked up by owner name. Exit releases the slot and
+prints a receipt containing the vehicle, owner, category, slot, entry time,
+exit time, duration and charge.
 
 | Category | Charge |
 |----------|--------|
@@ -103,14 +108,16 @@ duration and charge.
 
 Billing uses integer arithmetic only. A positive visit of up to one hour costs
 Rs. 20; each additional started hour costs another Rs. 20. A zero-length visit
-costs Rs. 0. There is no daily cap.
+costs Rs. 0. There is no daily cap. An exit timestamp before the entry
+timestamp is rejected and the session remains active.
 
 ## Persistence
 
-State is loaded automatically at startup from `data/parking.dat`. The program
-runs entirely in memory during the session — all registrations, entries and
-exits update the in-memory state and counters immediately — and everything is
-saved once on exit. Save failures are reported at exit. The binary format is:
+State is loaded automatically at startup from `data/parking.dat`. Every
+state-changing operation — registration, entry, exit — is saved to disk
+immediately, so data survives a crash or forced termination. The exit save is
+confirmed before the application reports success. If a save fails, the user is
+warned that changes may be lost. The binary format is:
 
 - magic `0x504B4453`, version `2`
 - fixed-width integers and fixed-length string fields
