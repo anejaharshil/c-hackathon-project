@@ -10,7 +10,7 @@
 
 #define MAX_SLOTS 200
 #define MAX_RECORDS 1000000u
-#define DEFAULT_SLOTS 50
+#define DEFAULT_SLOTS 45
 #define VISITOR_RATE 20
 #define HOUR_SECONDS 3600
 
@@ -30,6 +30,15 @@ typedef enum {
     VEHICLE_MOTORCYCLE,
     VEHICLE_BICYCLE
 } VehicleType;
+
+typedef enum {
+    SECTION_TEACHER,
+    SECTION_STUDENT,
+    SECTION_VISITOR,
+    SECTION_COUNT
+} ParkingSection;
+
+#define VEHICLE_TYPE_COUNT 3
 
 typedef enum {
     PARKING_OK = 0,
@@ -58,6 +67,8 @@ typedef struct {
 
 typedef struct {
     Id id;
+    ParkingSection section;
+    VehicleType type;
     Id vehicle_id;
     int available;
 } ParkingSlot;
@@ -121,8 +132,19 @@ size_t parking_occupied_slots(const ParkingSystem *sys);
 size_t parking_active_sessions(const ParkingSystem *sys);
 long parking_total_revenue(const ParkingSystem *sys);
 
+/* Per-section / per-type slot counters */
+size_t parking_section_occupied(const ParkingSystem *sys, ParkingSection section);
+size_t parking_section_total(const ParkingSystem *sys, ParkingSection section);
+size_t parking_section_type_occupied(const ParkingSystem *sys,
+                                     ParkingSection section,
+                                     VehicleType type);
+size_t parking_section_type_total(const ParkingSystem *sys,
+                                  ParkingSection section,
+                                  VehicleType type);
+
 const char *parking_user_type_name(UserType type);
 const char *parking_vehicle_type_name(VehicleType type);
+const char *parking_section_name(ParkingSection section);
 
 ParkingStatus storage_save(const ParkingSystem *sys, const char *path);
 ParkingStatus storage_load(ParkingSystem *sys, const char *path);

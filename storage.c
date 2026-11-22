@@ -112,7 +112,9 @@ static int save_to_file(const ParkingSystem *sys, FILE *file) {
         const ParkingSlot *slot = &sys->slots[i];
         if (write_i64(file, (int64_t)slot->id) != 0 ||
             write_i64(file, (int64_t)slot->vehicle_id) != 0 ||
-            write_i32(file, (int32_t)slot->available) != 0) {
+            write_i32(file, (int32_t)slot->available) != 0 ||
+            write_i32(file, (int32_t)slot->section) != 0 ||
+            write_i32(file, (int32_t)slot->type) != 0) {
             return -1;
         }
     }
@@ -372,16 +374,22 @@ static ParkingStatus load_slots(FILE *file, ParkingSystem *loaded,
         int64_t id = 0;
         int64_t vehicle_id = ID_NONE;
         int32_t available = 0;
+        int32_t section = 0;
+        int32_t vtype = 0;
 
         if (read_i64(file, &id) != 0 ||
             read_i64(file, &vehicle_id) != 0 ||
-            read_i32(file, &available) != 0) {
+            read_i32(file, &available) != 0 ||
+            read_i32(file, &section) != 0 ||
+            read_i32(file, &vtype) != 0) {
             return PARKING_INVALID;
         }
         if (id <= previous_id || id > INT64_MAX - 2 ||
             (available != 0 && available != 1) ||
             (available == 1 && vehicle_id != ID_NONE) ||
-            (available == 0 && vehicle_id <= 0)) {
+            (available == 0 && vehicle_id <= 0) ||
+            section < 0 || section >= SECTION_COUNT ||
+            vtype < VEHICLE_CAR || vtype > VEHICLE_BICYCLE) {
             return PARKING_INVALID;
         }
         previous_id = (Id)id;
@@ -389,6 +397,8 @@ static ParkingStatus load_slots(FILE *file, ParkingSystem *loaded,
         slot->id = (Id)id;
         slot->vehicle_id = (Id)vehicle_id;
         slot->available = available;
+        slot->section = (ParkingSection)section;
+        slot->type = (VehicleType)vtype;
         if (slot->id > *max_id) {
             *max_id = slot->id;
         }
@@ -459,6 +469,19 @@ static int vehicle_exists(const ParkingSystem *sys, Id id) {
     return 0;
 }
 
+static ParkingSection section_for_user_type_from_sys(UserType user_type) {
+    switch (user_type) {
+        case USER_STAFF:
+            return SECTION_TEACHER;
+        case USER_STUDENT:
+            return SECTION_STUDENT;
+        case USER_VISITOR:
+            return SECTION_VISITOR;
+        default:
+            return SECTION_VISITOR;
+    }
+}
+
 static size_t slot_index_by_id(const ParkingSystem *sys, Id id) {
     for (size_t i = 0; i < sys->slot_count; i++) {
         if (sys->slots[i].id == id) {
@@ -493,6 +516,21 @@ static int relationships_valid(const ParkingSystem *sys) {
         }
         const ParkingSlot *slot = &sys->slots[index];
         if (slot->available || slot->vehicle_id != session->vehicle_id) {
+            return 0;
+        }
+        /* The slot's section/type must match the vehicle's user_type/type. */
+        const Vehicle *vehicle = NULL;
+        for (size_t v = 0; v < sys->vehicle_count; v++) {
+            if (sys->vehicles[v].id == session->vehicle_id) {
+                vehicle = &sys->vehicles[v];
+                break;
+            }
+        }
+        if (vehicle == NULL) {
+            return 0;
+        }
+        ParkingSection expected_section = section_for_user_type_from_sys(vehicle->user_type);
+        if (slot->section != expected_section || slot->type != vehicle->vehicle_type) {
             return 0;
         }
         for (size_t j = i + 1; j < sys->session_count; j++) {

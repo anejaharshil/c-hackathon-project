@@ -9,7 +9,7 @@
 #include <time.h>
 
 // Global Variables
-static int saving_enabled = 1;
+// (none)
 
 // Macros
 #define TEXT_SIZE 32
@@ -28,8 +28,6 @@ static void print_menu(void);
 static void format_time(time_t value, char *buffer, size_t size);
 static void format_duration(long seconds, char *buffer, size_t size);
 static const char *status_message(ParkingStatus status);
-static ParkingStatus save_state(const ParkingSystem *sys);
-static void warn_save(ParkingStatus status);
 static ParkingSystem *load_system(void);
 static void register_vehicle(ParkingSystem *sys);
 static void vehicle_entry(ParkingSystem *sys);
@@ -84,7 +82,8 @@ int main(void) {
         }
     }
 
-    ParkingStatus saved = save_state(sys);
+    /* Save only on exit — all changes live in memory during the session. */
+    ParkingStatus saved = storage_save(sys, DATA_PATH);
     clear_screen();
     if (saved == PARKING_OK) {
         puts("Data saved. Goodbye.");
@@ -175,18 +174,27 @@ static void pause_screen(void) {
 
 static void print_header(const ParkingSystem *sys) {
     printf("SMART CAMPUS PARKING SYSTEM\n");
-    printf("Occupied: %zu / %zu\n\n", parking_occupied_slots(sys),
-           sys->slot_count);
+    printf("Teacher: %zu/%zu  |  Student: %zu/%zu  |  Visitor: %zu/%zu\n",
+           parking_section_occupied(sys, SECTION_TEACHER),
+           parking_section_total(sys, SECTION_TEACHER),
+           parking_section_occupied(sys, SECTION_STUDENT),
+           parking_section_total(sys, SECTION_STUDENT),
+           parking_section_occupied(sys, SECTION_VISITOR),
+           parking_section_total(sys, SECTION_VISITOR));
+    printf("Total:   %zu / %zu\n\n",
+           parking_occupied_slots(sys), sys->slot_count);
 }
 
 static void print_menu(void) {
-    puts("1. Register Vehicle");
-    puts("2. Vehicle Entry");
-    puts("3. Vehicle Exit");
-    puts("4. Parking Status");
-    puts("5. Search Vehicle");
-    puts("6. Statistics");
-    puts("0. Exit");
+    printf("========================================\n");
+    printf("1. Register Vehicle\n");
+    printf("2. Vehicle Entry\n");
+    printf("3. Vehicle Exit\n");
+    printf("4. Parking Status\n");
+    printf("5. Search Vehicle\n");
+    printf("6. Statistics\n");
+    printf("0. Exit\n");
+    printf("========================================\n");
 }
 
 static void format_time(time_t value, char *buffer, size_t size) {
@@ -218,7 +226,7 @@ static const char *status_message(ParkingStatus status) {
         case PARKING_NOT_PARKED:
             return "That vehicle is not currently parked.";
         case PARKING_FULL:
-            return "The car park is full.";
+            return "The section is full.";
         case PARKING_LIMIT:
             return "The record limit has been reached.";
         case PARKING_NO_MEMORY:
@@ -231,19 +239,6 @@ static const char *status_message(ParkingStatus status) {
             return "Invalid ID. Students need a 9-digit SAP ID (590000000-590099999); teachers need a 9-digit ID.";
         default:
             return "The operation could not be completed.";
-    }
-}
-
-static ParkingStatus save_state(const ParkingSystem *sys) {
-    if (!saving_enabled) {
-        return PARKING_ERROR;
-    }
-    return storage_save(sys, DATA_PATH);
-}
-
-static void warn_save(ParkingStatus status) {
-    if (status != PARKING_OK) {
-        puts("\nWarning: data could not be saved.");
     }
 }
 
@@ -274,11 +269,9 @@ static ParkingSystem *load_system(void) {
         } else {
             puts("The original file could not be preserved.");
             puts("Saving is disabled for this session to protect it.");
-            saving_enabled = 0;
         }
     } else {
         puts("Saving is disabled for this session.");
-        saving_enabled = 0;
     }
     pause_screen();
     return sys;
@@ -365,7 +358,6 @@ static void register_vehicle(ParkingSystem *sys) {
     if (status == PARKING_OK) {
         printf("\nVehicle registered successfully (ID %lld).\n",
                (long long)id);
-        warn_save(save_state(sys));
     } else {
         printf("\n%s\n", status_message(status));
     }
@@ -389,7 +381,6 @@ static void vehicle_entry(ParkingSystem *sys) {
                                          &slot_id);
     if (status == PARKING_OK) {
         printf("\nEntry recorded. Assigned slot %lld.\n", (long long)slot_id);
-        warn_save(save_state(sys));
     } else {
         printf("\n%s\n", status_message(status));
     }
@@ -432,7 +423,6 @@ static void vehicle_exit(ParkingSystem *sys) {
                                         &receipt);
     if (status == PARKING_OK) {
         print_receipt(&receipt);
-        warn_save(save_state(sys));
     } else {
         printf("\n%s\n", status_message(status));
     }
@@ -444,12 +434,26 @@ static void parking_status(ParkingSystem *sys) {
     print_header(sys);
     puts("PARKING STATUS\n");
 
+    const char *section_names[] = {"Teacher Parking", "Student Parking",
+                                   "Visitor Parking"};
+    for (int s = 0; s < SECTION_COUNT; s++) {
+        printf("%s:\n", section_names[s]);
+        const char *type_names[] = {"Car", "Motorcycle", "Bicycle"};
+        for (int t = 0; t < VEHICLE_TYPE_COUNT; t++) {
+            size_t occ = parking_section_type_occupied(
+                sys, (ParkingSection)s, (VehicleType)t);
+            size_t tot = parking_section_type_total(
+                sys, (ParkingSection)s, (VehicleType)t);
+            printf("  %-12s %zu/%zu\n", type_names[t], occ, tot);
+        }
+    }
+
     size_t occupied = parking_occupied_slots(sys);
     if (occupied == 0) {
-        puts("No vehicles are currently parked.");
+        puts("\nNo vehicles are currently parked.");
     } else {
-        printf("%-6s %-16s %-24s %s\n", "Slot", "Vehicle", "Owner",
-               "Category");
+        printf("\n%-6s %-16s %-24s %s %s\n", "Slot", "Vehicle", "Owner",
+               "Section", "Type");
         for (size_t i = 0; i < sys->slot_count; i++) {
             const ParkingSlot *slot = &sys->slots[i];
             if (slot->available) {
@@ -457,12 +461,13 @@ static void parking_status(ParkingSystem *sys) {
             }
             Vehicle *vehicle = parking_vehicle_by_id(sys, slot->vehicle_id);
             if (vehicle == NULL) {
-                printf("%-6lld %-16s %-24s %s\n", (long long)slot->id,
-                       "(unknown)", "-", "-");
+                printf("%-6lld %-16s %-24s %s %s\n",
+                       (long long)slot->id, "(unknown)", "-", "-", "-");
             } else {
-                printf("%-6lld %-16s %-24s %s\n", (long long)slot->id,
-                       vehicle->registration, vehicle->owner,
-                       parking_user_type_name(vehicle->user_type));
+                printf("%-6lld %-16s %-24s %s %s\n",
+                       (long long)slot->id, vehicle->registration,
+                       vehicle->owner, parking_section_name(slot->section),
+                       parking_vehicle_type_name(slot->type));
             }
         }
     }

@@ -39,8 +39,8 @@ static void remove_test_file(void) {
     remove(TEST_PATH ".bak.3");
 }
 
-static ParkingSystem *make_system(int slots) {
-    ParkingSystem *sys = parking_create(slots);
+static ParkingSystem *make_system(void) {
+    ParkingSystem *sys = parking_create(DEFAULT_SLOTS);
     if (sys == NULL) {
         fprintf(stderr, "FATAL: parking_create failed\n");
         exit(1);
@@ -63,7 +63,7 @@ static Id add_vehicle(ParkingSystem *sys, const char *registration,
 }
 
 static void test_registration(void) {
-    ParkingSystem *sys = make_system(4);
+    ParkingSystem *sys = make_system();
     Id id = ID_NONE;
 
     CHECK(parking_register(sys, "UP16AA0001", "Alice", "590000001",
@@ -170,7 +170,7 @@ static void test_billing(void) {
 }
 
 static void test_entry_and_exit(void) {
-    ParkingSystem *sys = make_system(4);
+    ParkingSystem *sys = make_system();
     add_vehicle(sys, "UP16AA0001", USER_STUDENT, "590000001");
     add_vehicle(sys, "UP16AA0002", USER_STAFF, "123456789");
     add_vehicle(sys, "UP16AA0003", USER_VISITOR, NULL);
@@ -229,23 +229,43 @@ static void test_entry_and_exit(void) {
 }
 
 static void test_capacity(void) {
-    ParkingSystem *sys = make_system(2);
-    add_vehicle(sys, "UP16AA0010", USER_STUDENT, "590000010");
-    add_vehicle(sys, "UP16AA0011", USER_STUDENT, "590000011");
-    add_vehicle(sys, "UP16AA0012", USER_STUDENT, "590000012");
+    ParkingSystem *sys = make_system();
 
-    CHECK(parking_enter(sys, "UP16AA0010", 1, NULL) == PARKING_OK,
-          "first vehicle enters a two-slot car park");
-    CHECK(parking_enter(sys, "UP16AA0011", 1, NULL) == PARKING_OK,
-          "second vehicle enters a two-slot car park");
-    CHECK(parking_enter(sys, "UP16AA0012", 1, NULL) == PARKING_FULL,
-          "entry is rejected when the car park is full");
+    /* Each section has 5 car slots (45 total / 9 pools). */
+    size_t student_car_total = parking_section_type_total(
+        sys, SECTION_STUDENT, VEHICLE_CAR);
+    CHECK(student_car_total == 5, "student section has 5 car slots");
+    size_t teacher_car_total = parking_section_type_total(
+        sys, SECTION_TEACHER, VEHICLE_CAR);
+    CHECK(teacher_car_total == 5, "teacher section has 5 car slots");
+    size_t visitor_car_total = parking_section_type_total(
+        sys, SECTION_VISITOR, VEHICLE_CAR);
+    CHECK(visitor_car_total == 5, "visitor section has 5 car slots");
+
+    /* Fill all teacher car slots */
+    for (int i = 0; i < 5; i++) {
+        char reg[16];
+        snprintf(reg, sizeof reg, "UP16TC%04d", i);
+        char sap[16];
+        snprintf(sap, sizeof sap, "59000020%01d", i);
+        CHECK(parking_register(sys, reg, "Teacher", sap, USER_STAFF,
+                               VEHICLE_CAR, NULL) == PARKING_OK,
+              "teacher car registration succeeds");
+        CHECK(parking_enter(sys, reg, 1, NULL) == PARKING_OK,
+              "teacher car entry succeeds");
+    }
+    /* Sixth teacher car entry should be full */
+    CHECK(parking_register(sys, "UP16TC9999", "Extra", "590000299",
+                           USER_STAFF, VEHICLE_CAR, NULL) == PARKING_OK,
+          "extra teacher car registration succeeds");
+    CHECK(parking_enter(sys, "UP16TC9999", 1, NULL) == PARKING_FULL,
+          "teacher car section is full");
 
     parking_destroy(sys);
 }
 
 static void test_growth(void) {
-    ParkingSystem *sys = make_system(1);
+    ParkingSystem *sys = make_system();
     char registration[32];
     char institution[32];
     int all_ok = 1;
@@ -271,7 +291,7 @@ static void test_growth(void) {
 
 static void test_persistence(void) {
     remove_test_file();
-    ParkingSystem *sys = make_system(3);
+    ParkingSystem *sys = make_system();
     Id student_id = add_vehicle(sys, "UP16AA0001", USER_STUDENT, "590000001");
     add_vehicle(sys, "UP16AA0003", USER_VISITOR, NULL);
 
@@ -279,13 +299,26 @@ static void test_persistence(void) {
           "active session created before save");
     CHECK(storage_save(sys, TEST_PATH) == PARKING_OK, "save succeeds");
 
-    ParkingSystem *loaded = make_system(1);
+    ParkingSystem *loaded = make_system();
     CHECK(storage_load(loaded, TEST_PATH) == PARKING_OK, "load succeeds");
     CHECK(loaded->vehicle_count == 2, "vehicles are restored");
-    CHECK(loaded->slot_count == 3, "slots are restored");
+    CHECK(loaded->slot_count == DEFAULT_SLOTS, "slots are restored");
     CHECK(loaded->session_count == 1 && loaded->sessions[0].active,
           "active session is restored");
-    CHECK(loaded->slots[0].available == 0, "slot occupancy is restored");
+
+    /* Find the occupied student car slot and verify it is not available */
+    Id student_slot = loaded->sessions[0].slot_id;
+    int slot_found = 0;
+    int slot_occupied = 0;
+    for (size_t i = 0; i < loaded->slot_count; i++) {
+        if (loaded->slots[i].id == student_slot) {
+            slot_found = 1;
+            slot_occupied = !loaded->slots[i].available;
+            break;
+        }
+    }
+    CHECK(slot_found, "student slot exists after load");
+    CHECK(slot_occupied, "student car slot occupancy is restored");
 
     Vehicle *student = parking_find_vehicle(loaded, "UP16AA0001");
     CHECK(student != NULL && student->id == student_id,
@@ -304,12 +337,20 @@ static void test_persistence(void) {
     CHECK(parking_exit(loaded, "UP16AA0001", 1700001800, &receipt) == PARKING_OK &&
               receipt.charge == 0,
           "a restored active session can exit");
-    CHECK(loaded->slots[0].available == 1,
-          "a restored slot is released on exit");
+    /* The student's slot should now be available again */
+    slot_found = 0;
+    for (size_t i = 0; i < loaded->slot_count; i++) {
+        if (loaded->slots[i].id == student_slot) {
+            slot_found = 1;
+            CHECK(loaded->slots[i].available, "student slot is released on exit");
+            break;
+        }
+    }
+    CHECK(slot_found, "student slot still exists after exit");
+    /* Visitor enters a visitor car slot */
     Id reused = ID_NONE;
-    CHECK(parking_enter(loaded, "UP16AA0003", 1700001800, &reused) == PARKING_OK &&
-              reused == loaded->slots[0].id,
-          "a restored system reuses the released slot");
+    CHECK(parking_enter(loaded, "UP16AA0003", 1700001800, &reused) == PARKING_OK,
+          "a restored system allows visitor entry");
     CHECK(parking_exit(loaded, "UP16AA0003", 1700003600, &receipt) == PARKING_OK &&
               receipt.charge == 20,
           "a restored system bills a visitor");
@@ -324,7 +365,7 @@ static void test_persistence(void) {
 
 static void test_revenue_persistence(void) {
     remove_test_file();
-    ParkingSystem *sys = make_system(2);
+    ParkingSystem *sys = make_system();
     add_vehicle(sys, "UP16AA0003", USER_VISITOR, NULL);
     Receipt receipt;
 
@@ -335,7 +376,7 @@ static void test_revenue_persistence(void) {
     CHECK(parking_total_revenue(sys) == 40, "revenue computed before save");
     CHECK(storage_save(sys, TEST_PATH) == PARKING_OK, "save revenue succeeds");
 
-    ParkingSystem *loaded = make_system(2);
+    ParkingSystem *loaded = make_system();
     CHECK(storage_load(loaded, TEST_PATH) == PARKING_OK, "load revenue succeeds");
     CHECK(parking_total_revenue(loaded) == 40,
           "completed session revenue is restored");
@@ -353,7 +394,7 @@ static void test_corruption(void) {
         fclose(file);
     }
 
-    ParkingSystem *sys = make_system(2);
+    ParkingSystem *sys = make_system();
     add_vehicle(sys, "UP16AA0030", USER_STUDENT, "590000030");
 
     CHECK(storage_load(sys, TEST_PATH) == PARKING_INVALID,
@@ -394,7 +435,7 @@ static void test_old_format(void) {
         fclose(file);
     }
 
-    ParkingSystem *sys = make_system(1);
+    ParkingSystem *sys = make_system();
     CHECK(storage_load(sys, TEST_PATH) == PARKING_INVALID,
           "version 1 save file is rejected as incompatible");
 
@@ -414,7 +455,7 @@ static void test_boundaries(void) {
     CHECK(parking_create(MAX_SLOTS + 1) == NULL,
           "oversized system is rejected");
 
-    ParkingSystem *sys = make_system(2);
+    ParkingSystem *sys = make_system();
     char long_text[MAX_REG_LEN + 4];
     memset(long_text, 'A', sizeof long_text - 1);
     long_text[sizeof long_text - 1] = '\0';
@@ -531,7 +572,7 @@ static void test_id_validation(void) {
 
 static void test_persistence_failures(void) {
     remove_test_file();
-    ParkingSystem *sys = make_system(2);
+    ParkingSystem *sys = make_system();
     add_vehicle(sys, "UP16AA0050", USER_STUDENT, "590000050");
 
     CHECK(storage_save(sys, "tests/no_such_directory/file.dat") == PARKING_ERROR,
@@ -550,7 +591,7 @@ static void test_persistence_failures(void) {
         fputs("x", file);
         fclose(file);
     }
-    ParkingSystem *loaded = make_system(2);
+    ParkingSystem *loaded = make_system();
     CHECK(storage_load(loaded, TEST_PATH) == PARKING_INVALID,
           "trailing bytes are rejected");
     parking_destroy(loaded);
@@ -569,7 +610,7 @@ static void test_persistence_failures(void) {
         fwrite(prefix, 1, prefix_size, file);
         fclose(file);
     }
-    loaded = make_system(2);
+    loaded = make_system();
     CHECK(storage_load(loaded, TEST_PATH) == PARKING_INVALID,
           "truncated file is rejected");
     parking_destroy(loaded);
@@ -583,7 +624,7 @@ static void test_persistence_failures(void) {
         fwrite(&bad_type, sizeof bad_type, 1, file);
         fclose(file);
     }
-    loaded = make_system(2);
+    loaded = make_system();
     CHECK(storage_load(loaded, TEST_PATH) == PARKING_INVALID,
           "invalid user category in a file is rejected");
     parking_destroy(loaded);
@@ -597,7 +638,7 @@ static void test_persistence_failures(void) {
         fwrite(&bad_count, sizeof bad_count, 1, file);
         fclose(file);
     }
-    loaded = make_system(2);
+    loaded = make_system();
     CHECK(storage_load(loaded, TEST_PATH) == PARKING_INVALID,
           "invalid record count in a file is rejected");
     parking_destroy(loaded);
@@ -623,7 +664,7 @@ static void test_persistence_failures(void) {
 
 static void test_inconsistent_state(void) {
     remove_test_file();
-    ParkingSystem *sys = make_system(2);
+    ParkingSystem *sys = make_system();
     add_vehicle(sys, "UP16AA0060", USER_STUDENT, "590000060");
     add_vehicle(sys, "UP16AA0061", USER_STUDENT, "590000061");
     CHECK(parking_enter(sys, "UP16AA0060", 1700000000, NULL) == PARKING_OK,
@@ -632,7 +673,7 @@ static void test_inconsistent_state(void) {
     sys->slots[0].vehicle_id = 9999;
     CHECK(storage_save(sys, TEST_PATH) == PARKING_OK,
           "inconsistent slot state is saved for testing");
-    ParkingSystem *loaded = make_system(2);
+    ParkingSystem *loaded = make_system();
     CHECK(storage_load(loaded, TEST_PATH) == PARKING_INVALID,
           "occupied slot with a missing vehicle is rejected");
     parking_destroy(loaded);
@@ -641,7 +682,7 @@ static void test_inconsistent_state(void) {
     sys->sessions[0].slot_id = 9999;
     CHECK(storage_save(sys, TEST_PATH) == PARKING_OK,
           "inconsistent session state is saved for testing");
-    loaded = make_system(2);
+    loaded = make_system();
     CHECK(storage_load(loaded, TEST_PATH) == PARKING_INVALID,
           "active session with a missing slot is rejected");
     parking_destroy(loaded);
@@ -650,7 +691,7 @@ static void test_inconsistent_state(void) {
     sys->vehicles[1].id = sys->vehicles[0].id;
     CHECK(storage_save(sys, TEST_PATH) == PARKING_OK,
           "duplicate IDs are saved for testing");
-    loaded = make_system(2);
+    loaded = make_system();
     CHECK(storage_load(loaded, TEST_PATH) == PARKING_INVALID,
           "duplicate vehicle IDs are rejected");
     parking_destroy(loaded);

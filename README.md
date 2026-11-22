@@ -31,7 +31,7 @@ make
 The compiler flags are:
 
 ```sh
-gcc -std=c17 -Wall -Wextra -Wpedantic -I. main.c parking.c storage.c -o parking
+gcc -std=c17 -Wall -Wextra -Wpedantic -I. main.c parking.c storage.c registration.c -o parking
 ```
 
 Sanitizer builds:
@@ -81,10 +81,19 @@ numbers are unique across the whole system. Each vehicle also records a type
 
 ## Parking and billing
 
-Entry assigns the first free slot and records the current time. A vehicle
-cannot have two active sessions, and a slot cannot hold two vehicles. Exit
-releases the slot and prints a receipt containing the vehicle, owner,
-category, slot, entry time, exit time, duration and charge.
+The parking area is divided into three sections — **Teacher Parking**,
+**Student Parking** and **Visitor Parking** — each with its own slots for
+cars, motorcycles and bicycles. A vehicle is assigned to the section matching
+its owner's category (teacher/staff → Teacher Parking, student → Student
+Parking, visitor → Visitor Parking) and to a slot matching its vehicle type.
+Each section/type combination has its own occupancy counter, shown on the
+header and in the parking status screen.
+
+Entry assigns the first free slot in the matching section and vehicle-type
+pool and records the current time. A vehicle cannot have two active sessions,
+and a slot cannot hold two vehicles. Exit releases the slot and prints a
+receipt containing the vehicle, owner, category, slot, entry time, exit time,
+duration and charge.
 
 | Category | Charge |
 |----------|--------|
@@ -98,10 +107,10 @@ costs Rs. 0. There is no daily cap.
 
 ## Persistence
 
-State is loaded automatically at startup and saved after every successful
-registration, entry and exit, and again on exit. Save failures are reported;
-the exit save is confirmed before the application reports success. The binary
-format is:
+State is loaded automatically at startup from `data/parking.dat`. The program
+runs entirely in memory during the session — all registrations, entries and
+exits update the in-memory state and counters immediately — and everything is
+saved once on exit. Save failures are reported at exit. The binary format is:
 
 - magic `0x504B4453`, version `2`
 - fixed-width integers and fixed-length string fields
@@ -112,8 +121,7 @@ The older version 1 file stored reservations and four separate ID counters.
 It cannot be converted without losing information, so it is not loaded. If an
 incompatible or corrupt file is found, the application explains the problem,
 renames the file to `data/parking.dat.bak` (or `.bak.1`, `.bak.2`, ...), and
-starts with an empty database. If the file cannot be preserved, saving is
-disabled for the session so existing data is never overwritten.
+starts with an empty database.
 
 ## Tests
 
@@ -143,5 +151,5 @@ loops, conditionals, `switch`, and modular design.
 - Registrations are normalized to uppercase, so letter case does not matter.
 - A visitor stay whose recorded exit is not after its entry is treated as a
   zero-length stay and costs Rs. 0.
-- The simplified model uses one general parking area; the old zone and
-  reservation features were removed.
+- Slots are divided equally among 3 sections x 3 vehicle types = 9 pools, so
+  the total slot count must be at least 9 (default 45).

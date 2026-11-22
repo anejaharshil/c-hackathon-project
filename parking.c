@@ -26,10 +26,15 @@ static int institution_taken(const ParkingSystem *sys,
                              UserType user_type);
 static ParkingStatus grow_vehicles(ParkingSystem *sys);
 static ParkingStatus grow_sessions(ParkingSystem *sys);
+static ParkingSection section_for_user_type(UserType user_type);
 
 // Functions
 ParkingSystem *parking_create(int slot_count) {
     if (slot_count <= 0 || slot_count > MAX_SLOTS) {
+        return NULL;
+    }
+    /* Divide slots equally among 3 sections x 3 vehicle types = 9 pools. */
+    if (slot_count < 9) {
         return NULL;
     }
     ParkingSystem *sys = calloc(1, sizeof *sys);
@@ -44,10 +49,26 @@ ParkingSystem *parking_create(int slot_count) {
     sys->slot_count = (size_t)slot_count;
     sys->next_id = 1;
 
-    for (size_t i = 0; i < sys->slot_count; i++) {
-        sys->slots[i].id = sys->next_id++;
-        sys->slots[i].vehicle_id = ID_NONE;
-        sys->slots[i].available = 1;
+    /* Slots per pool = slot_count / 9, distributed round-robin. */
+    size_t slots_per_pool = slot_count / (size_t)(SECTION_COUNT * VEHICLE_TYPE_COUNT);
+    size_t extra = slot_count % (size_t)(SECTION_COUNT * VEHICLE_TYPE_COUNT);
+    Id next_slot_id = 1;
+
+    for (int s = 0; s < SECTION_COUNT; s++) {
+        for (int t = 0; t < VEHICLE_TYPE_COUNT; t++) {
+            size_t pool_size = slots_per_pool;
+            if ((size_t)(s * VEHICLE_TYPE_COUNT + t) < extra) {
+                pool_size++;
+            }
+            for (size_t i = 0; i < pool_size; i++) {
+                size_t index = (size_t)(next_slot_id - 1);
+                sys->slots[index].id = next_slot_id++;
+                sys->slots[index].section = (ParkingSection)s;
+                sys->slots[index].type = (VehicleType)t;
+                sys->slots[index].vehicle_id = ID_NONE;
+                sys->slots[index].available = 1;
+            }
+        }
     }
     return sys;
 }
@@ -189,6 +210,19 @@ size_t parking_sessions_for(const ParkingSystem *sys, Id vehicle_id) {
     return count;
 }
 
+static ParkingSection section_for_user_type(UserType user_type) {
+    switch (user_type) {
+        case USER_STAFF:
+            return SECTION_TEACHER;
+        case USER_STUDENT:
+            return SECTION_STUDENT;
+        case USER_VISITOR:
+            return SECTION_VISITOR;
+        default:
+            return SECTION_VISITOR;
+    }
+}
+
 ParkingStatus parking_enter(ParkingSystem *sys, const char *registration,
                             time_t now, Id *out_slot_id) {
     if (sys == NULL) {
@@ -202,9 +236,14 @@ ParkingStatus parking_enter(ParkingSystem *sys, const char *registration,
         return PARKING_ALREADY_PARKED;
     }
 
+    ParkingSection section = section_for_user_type(vehicle->user_type);
+
+    /* Find an available slot in the vehicle's section and type. */
     ParkingSlot *slot = NULL;
     for (size_t i = 0; i < sys->slot_count; i++) {
-        if (sys->slots[i].available) {
+        if (sys->slots[i].available &&
+            sys->slots[i].section == section &&
+            sys->slots[i].type == vehicle->vehicle_type) {
             slot = &sys->slots[i];
             break;
         }
@@ -345,6 +384,66 @@ long parking_total_revenue(const ParkingSystem *sys) {
     return total;
 }
 
+size_t parking_section_occupied(const ParkingSystem *sys,
+                                ParkingSection section) {
+    if (sys == NULL) {
+        return 0;
+    }
+    size_t count = 0;
+    for (size_t i = 0; i < sys->slot_count; i++) {
+        if (!sys->slots[i].available && sys->slots[i].section == section) {
+            count++;
+        }
+    }
+    return count;
+}
+
+size_t parking_section_total(const ParkingSystem *sys,
+                             ParkingSection section) {
+    if (sys == NULL) {
+        return 0;
+    }
+    size_t count = 0;
+    for (size_t i = 0; i < sys->slot_count; i++) {
+        if (sys->slots[i].section == section) {
+            count++;
+        }
+    }
+    return count;
+}
+
+size_t parking_section_type_occupied(const ParkingSystem *sys,
+                                     ParkingSection section,
+                                     VehicleType type) {
+    if (sys == NULL) {
+        return 0;
+    }
+    size_t count = 0;
+    for (size_t i = 0; i < sys->slot_count; i++) {
+        if (!sys->slots[i].available &&
+            sys->slots[i].section == section &&
+            sys->slots[i].type == type) {
+            count++;
+        }
+    }
+    return count;
+}
+
+size_t parking_section_type_total(const ParkingSystem *sys,
+                                  ParkingSection section,
+                                  VehicleType type) {
+    if (sys == NULL) {
+        return 0;
+    }
+    size_t count = 0;
+    for (size_t i = 0; i < sys->slot_count; i++) {
+        if (sys->slots[i].section == section && sys->slots[i].type == type) {
+            count++;
+        }
+    }
+    return count;
+}
+
 const char *parking_user_type_name(UserType type) {
     switch (type) {
         case USER_STUDENT:
@@ -366,6 +465,19 @@ const char *parking_vehicle_type_name(VehicleType type) {
             return "Motorcycle";
         case VEHICLE_BICYCLE:
             return "Bicycle";
+        default:
+            return "Unknown";
+    }
+}
+
+const char *parking_section_name(ParkingSection section) {
+    switch (section) {
+        case SECTION_TEACHER:
+            return "Teacher Parking";
+        case SECTION_STUDENT:
+            return "Student Parking";
+        case SECTION_VISITOR:
+            return "Visitor Parking";
         default:
             return "Unknown";
     }

@@ -17,8 +17,6 @@ tests/test_parking_system
 *.tmp
 
 # Runtime data files
-data/parking.dat
-data/*.bak*
 
 # Test data files
 tests/*.dat
