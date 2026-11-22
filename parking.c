@@ -412,6 +412,33 @@ size_t parking_section_total(const ParkingSystem *sys,
     return count;
 }
 
+size_t parking_section_registered(const ParkingSystem *sys,
+                                  ParkingSection section) {
+    if (sys == NULL) {
+        return 0;
+    }
+    UserType user_type;
+    switch (section) {
+        case SECTION_TEACHER:
+            user_type = USER_STAFF;
+            break;
+        case SECTION_STUDENT:
+            user_type = USER_STUDENT;
+            break;
+        case SECTION_VISITOR:
+        default:
+            user_type = USER_VISITOR;
+            break;
+    }
+    size_t count = 0;
+    for (size_t i = 0; i < sys->vehicle_count; i++) {
+        if (sys->vehicles[i].user_type == user_type) {
+            count++;
+        }
+    }
+    return count;
+}
+
 size_t parking_section_type_occupied(const ParkingSystem *sys,
                                      ParkingSection section,
                                      VehicleType type) {

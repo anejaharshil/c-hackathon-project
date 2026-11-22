@@ -135,6 +135,8 @@ long parking_total_revenue(const ParkingSystem *sys);
 /* Per-section / per-type slot counters */
 size_t parking_section_occupied(const ParkingSystem *sys, ParkingSection section);
 size_t parking_section_total(const ParkingSystem *sys, ParkingSection section);
+size_t parking_section_registered(const ParkingSystem *sys,
+                                  ParkingSection section);
 size_t parking_section_type_occupied(const ParkingSystem *sys,
                                      ParkingSection section,
                                      VehicleType type);

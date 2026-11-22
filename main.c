@@ -174,14 +174,18 @@ static void pause_screen(void) {
 
 static void print_header(const ParkingSystem *sys) {
     printf("SMART CAMPUS PARKING SYSTEM\n");
-    printf("Teacher: %zu/%zu  |  Student: %zu/%zu  |  Visitor: %zu/%zu\n",
+    printf("Teacher: %zu reg / %zu occ / %zu  |  Student: %zu reg / %zu occ / %zu  |  Visitor: %zu reg / %zu occ / %zu\n",
+           parking_section_registered(sys, SECTION_TEACHER),
            parking_section_occupied(sys, SECTION_TEACHER),
            parking_section_total(sys, SECTION_TEACHER),
+           parking_section_registered(sys, SECTION_STUDENT),
            parking_section_occupied(sys, SECTION_STUDENT),
            parking_section_total(sys, SECTION_STUDENT),
+           parking_section_registered(sys, SECTION_VISITOR),
            parking_section_occupied(sys, SECTION_VISITOR),
            parking_section_total(sys, SECTION_VISITOR));
-    printf("Total:   %zu / %zu\n\n",
+    printf("Total registered: %zu  |  Total occupied: %zu / %zu\n\n",
+           sys->vehicle_count,
            parking_occupied_slots(sys), sys->slot_count);
 }
 
