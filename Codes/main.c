@@ -36,6 +36,7 @@ static void vehicle_exit(ParkingSystem *sys);
 static void parking_status(ParkingSystem *sys);
 static void search_vehicle(ParkingSystem *sys);
 static void statistics(const ParkingSystem *sys);
+static ParkingStatus save_state(ParkingSystem *sys);
 
 // main function
 int main(void) {
@@ -83,7 +84,7 @@ int main(void) {
     }
 
     /* Save only on exit — all changes live in memory during the session. */
-    ParkingStatus saved = storage_save(sys, DATA_PATH);
+    ParkingStatus saved = save_state(sys);
     clear_screen();
     if (saved == PARKING_OK) {
         puts("Data saved. Goodbye.");
@@ -244,6 +245,10 @@ static const char *status_message(ParkingStatus status) {
         default:
             return "The operation could not be completed.";
     }
+}
+
+static ParkingStatus save_state(ParkingSystem *sys) {
+    return storage_save(sys, DATA_PATH);
 }
 
 static ParkingSystem *load_system(void) {

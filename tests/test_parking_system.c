@@ -38,6 +38,12 @@ static void remove_test_file(void) {
     remove(TEST_PATH ".bak.1");
     remove(TEST_PATH ".bak.2");
     remove(TEST_PATH ".bak.3");
+    remove("data/parking.dat");
+    remove("data/parking.dat.tmp");
+    remove("data/parking.dat.bak");
+    remove("data/parking.dat.bak.1");
+    remove("data/parking.dat.bak.2");
+    remove("data/parking.dat.bak.3");
 }
 
 static ParkingSystem *make_system(void) {
@@ -359,6 +365,66 @@ static void test_bicycle_entry_exit_by_id(void) {
           "exit with invalid ID rejected");
 
     parking_destroy(sys);
+}
+
+static void test_auto_save_registration(void) {
+    remove("data/parking.dat");
+    remove("data/parking.dat.bak");
+    remove("data/parking.dat.tmp");
+    ParkingSystem *sys = make_system();
+    CHECK(parking_register(sys, "UP16AA0100", "Auto", "590000100",
+                           USER_STUDENT, VEHICLE_CAR, NULL) == PARKING_OK,
+          "registration succeeds");
+    /* Simulate crash: reload from file without going through main() exit */
+    ParkingSystem *loaded = make_system();
+    CHECK(storage_load(loaded, DATA_PATH) == PARKING_OK,
+          "reload after registration auto-save");
+    CHECK(parking_find_vehicle(loaded, "UP16AA0100") != NULL,
+          "registered vehicle persists after simulated crash");
+    parking_destroy(loaded);
+    parking_destroy(sys);
+    remove("data/parking.dat");
+    remove("data/parking.dat.bak");
+    remove("data/parking.dat.tmp");
+}
+
+static void test_auto_save_entry_exit(void) {
+    remove("data/parking.dat");
+    remove("data/parking.dat.bak");
+    remove("data/parking.dat.tmp");
+    ParkingSystem *sys = make_system();
+    add_vehicle(sys, "UP16AA0101", USER_STUDENT, "590000101");
+    time_t base = 1700000000;
+    Id slot_id = ID_NONE;
+    Receipt receipt;
+
+    CHECK(parking_enter(sys, "UP16AA0101", base, &slot_id) == PARKING_OK,
+          "entry succeeds");
+    ParkingSystem *loaded = make_system();
+    CHECK(storage_load(loaded, DATA_PATH) == PARKING_OK,
+          "reload after entry auto-save");
+    CHECK(parking_active_sessions(loaded) == 1,
+          "active session survives restart after entry");
+    CHECK(parking_occupied_slots(loaded) == 1,
+          "slot occupancy survives restart after entry");
+    parking_destroy(loaded);
+
+    CHECK(parking_exit(sys, "UP16AA0101", base + 1800, &receipt) == PARKING_OK,
+          "exit succeeds");
+    loaded = make_system();
+    CHECK(storage_load(loaded, DATA_PATH) == PARKING_OK,
+          "reload after exit auto-save");
+    CHECK(parking_active_sessions(loaded) == 0,
+          "no active sessions after exit restart");
+    CHECK(parking_occupied_slots(loaded) == 0,
+          "slot released after exit restart");
+    CHECK(parking_total_revenue(loaded) == 0,
+          "student revenue (free) persists");
+    parking_destroy(loaded);
+    parking_destroy(sys);
+    remove("data/parking.dat");
+    remove("data/parking.dat.bak");
+    remove("data/parking.dat.tmp");
 }
 
 static void test_growth(void) {
@@ -810,6 +876,8 @@ int main(void) {
     test_capacity();
     test_section_registered_count();
     test_bicycle_entry_exit_by_id();
+    test_auto_save_registration();
+    test_auto_save_entry_exit();
     test_growth();
     test_persistence();
     test_revenue_persistence();

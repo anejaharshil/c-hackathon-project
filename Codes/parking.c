@@ -150,6 +150,10 @@ ParkingStatus parking_register(ParkingSystem *sys, const char *registration,
     if (out_id != NULL) {
         *out_id = vehicle->id;
     }
+    /* Auto-persist successful state-changing operations. */
+    if (storage_save(sys, DATA_PATH) != PARKING_OK) {
+        fprintf(stderr, "Warning: data could not be saved after registration.\n");
+    }
     return PARKING_OK;
 }
 
@@ -306,6 +310,10 @@ ParkingStatus parking_enter_by_id(ParkingSystem *sys, Id vehicle_id,
     if (out_slot_id != NULL) {
         *out_slot_id = slot->id;
     }
+    /* Auto-persist successful state-changing operations. */
+    if (storage_save(sys, DATA_PATH) != PARKING_OK) {
+        fprintf(stderr, "Warning: data could not be saved after entry.\n");
+    }
     return PARKING_OK;
 }
 
@@ -368,6 +376,10 @@ ParkingStatus parking_exit_by_id(ParkingSystem *sys, Id vehicle_id,
     out_receipt->exit_time = now;
     out_receipt->duration_seconds = duration;
     out_receipt->charge = session->charge;
+    /* Auto-persist successful state-changing operations. */
+    if (storage_save(sys, DATA_PATH) != PARKING_OK) {
+        fprintf(stderr, "Warning: data could not be saved after exit.\n");
+    }
     return PARKING_OK;
 }
 
