@@ -1,4 +1,5 @@
 #include "parking.h"
+#include "registration.h"
 
 #include <limits.h>
 #include <stdint.h>
@@ -426,6 +427,81 @@ static void test_boundaries(void) {
     parking_destroy(sys);
 }
 
+static void test_registration_validation(void) {
+    CHECK(registration_is_valid("UP16FU5674"),
+          "UP16 Noida registration is valid");
+    CHECK(registration_is_valid("UK07CC1234"),
+          "UK07 Uttarakhand registration is valid");
+    CHECK(registration_is_valid("DL01AB1234"),
+          "DL01 Delhi registration is valid");
+    CHECK(registration_is_valid("MH01AA0001"),
+          "MH01 Mumbai registration is valid");
+    CHECK(registration_is_valid("KA01AB1234"),
+          "KA01 Bengaluru registration is valid");
+    CHECK(registration_is_valid("TN01AB1234"),
+          "TN01 Chennai registration is valid");
+    CHECK(registration_is_valid("AP39AB1234"),
+          "AP39 Andhra Pradesh registration is valid");
+    CHECK(registration_is_valid("TS09AB1234"),
+          "TS09 Telangana registration is valid");
+    CHECK(registration_is_valid("AN01AB1234"),
+          "AN01 Andaman registration is valid");
+    CHECK(!registration_is_valid("UR78HJ7834"),
+          "unknown state code is rejected");
+    CHECK(!registration_is_valid("UP99AB1234"),
+          "unknown RTO district is rejected");
+    CHECK(!registration_is_valid("UP16FU567"),
+          "nine-character registration is rejected");
+    CHECK(!registration_is_valid("UP16FU56745"),
+          "eleven-character registration is rejected");
+    CHECK(!registration_is_valid("UP16F15674"),
+          "digit in the series is rejected");
+    CHECK(!registration_is_valid("UP16FU56A4"),
+          "letter in the number is rejected");
+    CHECK(!registration_is_valid("UP16 FU5674"),
+          "space inside the registration is rejected");
+    CHECK(!registration_is_valid(""),
+          "empty registration is rejected");
+    CHECK(!registration_is_valid(NULL),
+          "null registration is rejected");
+
+    char normalized[16];
+    CHECK(registration_normalize(normalized, sizeof normalized,
+                                 "up16fu5674") &&
+              strcmp(normalized, "UP16FU5674") == 0,
+          "lowercase registration is normalized to uppercase");
+    CHECK(registration_normalize(normalized, sizeof normalized,
+                                 " Up16Fu5674 ") &&
+              strcmp(normalized, "UP16FU5674") == 0,
+          "surrounding spaces are trimmed during normalization");
+    CHECK(!registration_normalize(normalized, sizeof normalized,
+                                  "UR78HJ7834"),
+          "invalid registration is not normalized");
+}
+
+static void test_id_validation(void) {
+    CHECK(sap_id_is_valid("590000000"), "lowest SAP ID is valid");
+    CHECK(sap_id_is_valid("590099999"), "highest SAP ID is valid");
+    CHECK(!sap_id_is_valid("590100000"), "SAP ID above range is rejected");
+    CHECK(!sap_id_is_valid("589999999"), "SAP ID below range is rejected");
+    CHECK(!sap_id_is_valid("59000000"), "eight-digit SAP ID is rejected");
+    CHECK(!sap_id_is_valid("5900000000"), "ten-digit SAP ID is rejected");
+    CHECK(!sap_id_is_valid("59000000A"), "non-numeric SAP ID is rejected");
+    CHECK(!sap_id_is_valid(""), "empty SAP ID is rejected");
+    CHECK(!sap_id_is_valid(NULL), "null SAP ID is rejected");
+
+    CHECK(teacher_id_is_valid("123456789"), "nine-digit teacher ID is valid");
+    CHECK(teacher_id_is_valid("000000000"),
+          "teacher ID with leading zeros is valid");
+    CHECK(!teacher_id_is_valid("12345678"), "eight-digit teacher ID is rejected");
+    CHECK(!teacher_id_is_valid("1234567890"),
+          "ten-digit teacher ID is rejected");
+    CHECK(!teacher_id_is_valid("12345678A"),
+          "non-numeric teacher ID is rejected");
+    CHECK(!teacher_id_is_valid(""), "empty teacher ID is rejected");
+    CHECK(!teacher_id_is_valid(NULL), "null teacher ID is rejected");
+}
+
 static void test_persistence_failures(void) {
     remove_test_file();
     ParkingSystem *sys = make_system(2);
@@ -559,6 +635,8 @@ static void test_inconsistent_state(void) {
 int main(void) {
     remove_test_file();
 
+    test_registration_validation();
+    test_id_validation();
     test_registration();
     test_billing();
     test_entry_and_exit();
