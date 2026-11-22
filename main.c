@@ -1,6 +1,5 @@
 #include "parking.h"
 
-#include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,6 +11,11 @@
 #define BACKUP_PATH_SIZE 512
 
 static int saving_enabled = 1;
+
+static int my_isspace(char c) {
+    return c == ' ' || c == '\t' || c == '\n' ||
+           c == '\v' || c == '\f' || c == '\r';
+}
 
 static void clear_screen(void) {
 #ifdef _WIN32
@@ -44,7 +48,7 @@ static int read_line(const char *prompt, char *buffer, size_t size) {
 
 static void trim(char *text) {
     size_t start = 0;
-    while (text[start] != '\0' && isspace((unsigned char)text[start])) {
+    while (text[start] != '\0' && my_isspace(text[start])) {
         start++;
     }
     if (start > 0) {
@@ -52,7 +56,7 @@ static void trim(char *text) {
     }
 
     size_t length = strlen(text);
-    while (length > 0 && isspace((unsigned char)text[length - 1])) {
+    while (length > 0 && my_isspace(text[length - 1])) {
         text[--length] = '\0';
     }
 }
@@ -136,6 +140,10 @@ static const char *status_message(ParkingStatus status) {
             return "Not enough memory to complete the operation.";
         case PARKING_INVALID:
             return "Invalid input. Please check the values and try again.";
+        case PARKING_INVALID_REGISTRATION:
+            return "Invalid registration. Use the format UP16AB1234 with a valid state and RTO code.";
+        case PARKING_INVALID_ID:
+            return "Invalid ID. Students need a 9-digit SAP ID (590000000-590099999); teachers need a 9-digit ID.";
         default:
             return "The operation could not be completed.";
     }
@@ -197,7 +205,7 @@ static void register_vehicle(ParkingSystem *sys) {
     puts("REGISTER VEHICLE\n");
 
     int category = 0;
-    if (!read_int("Category (1 Student, 2 Staff, 3 Visitor): ", 1, 3,
+    if (!read_int("Category (1 Student, 2 Teacher, 3 Visitor): ", 1, 3,
                   &category)) {
         return;
     }
@@ -211,7 +219,7 @@ static void register_vehicle(ParkingSystem *sys) {
         return;
     }
     trim(owner);
-    if (!read_line("Vehicle registration: ", registration,
+    if (!read_line("Vehicle registration (e.g. UP16AB1234): ", registration,
                    sizeof registration)) {
         return;
     }
@@ -219,8 +227,8 @@ static void register_vehicle(ParkingSystem *sys) {
 
     if (user_type != USER_VISITOR) {
         const char *prompt = user_type == USER_STUDENT
-                                 ? "Student ID: "
-                                 : "Staff ID: ";
+                                 ? "SAP ID (590000000-590099999): "
+                                 : "Teacher ID (9 digits): ";
         if (!read_line(prompt, institution, sizeof institution)) {
             return;
         }

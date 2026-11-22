@@ -10,6 +10,8 @@ exit times, prints receipts, and stores all records in a binary `.dat` file.
 main.c        Console interface, input handling and menu navigation
 parking.c     Vehicles, slots, sessions, billing and dynamic arrays
 parking.h     Shared structures, enums, constants and declarations
+registration.c   Indian registration and campus ID validation
+registration.h   Validation declarations
 storage.c     Binary .dat loading, saving and validation
 data/         Runtime save file (directory kept in version control)
 tests/        Automated regression tests
@@ -59,9 +61,19 @@ main menu.
 
 | Category | Required details |
 |----------|------------------|
-| Student  | Student ID, owner name, registration number |
-| Staff    | Staff ID, owner name, registration number |
+| Student  | SAP ID (`590000000`–`590099999`), owner name, registration number |
+| Teacher  | 9-digit teacher ID, owner name, registration number |
 | Visitor  | Owner name, registration number |
+
+Vehicle registration numbers follow the Indian format: exactly 10 characters,
+`SS DD LL NNNN`, where `SS` is a two-letter state/union-territory code, `DD` is
+a two-digit RTO district code valid for that state, `LL` is a two-letter series,
+and `NNNN` is a four-digit number. For example, `UP16FU5674` is valid (Uttar
+Pradesh, Noida) but `UR78HJ7834` is not (`UR` is not an Indian state code) and
+`UP99AB1234` is not (`UP99` is not an assigned RTO district).
+
+Input is trimmed and converted to uppercase before validation, so `up16fu5674`
+and ` UP16Fu5674 ` are both accepted and stored as `UP16FU5674`.
 
 Institutional IDs are unique within their own category. Vehicle registration
 numbers are unique across the whole system. Each vehicle also records a type
@@ -128,7 +140,7 @@ loops, conditionals, `switch`, and modular design.
 
 - The save format uses native byte order and is not portable between machines
   with different endianness.
-- Registrations are matched exactly, so letter case matters.
+- Registrations are normalized to uppercase, so letter case does not matter.
 - A visitor stay whose recorded exit is not after its entry is treated as a
   zero-length stay and costs Rs. 0.
 - The simplified model uses one general parking area; the old zone and

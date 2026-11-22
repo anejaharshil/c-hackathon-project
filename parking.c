@@ -410,7 +410,7 @@ const char *parking_user_type_name(UserType type) {
         case USER_STUDENT:
             return "Student";
         case USER_STAFF:
-            return "Staff";
+            return "Teacher";
         case USER_VISITOR:
             return "Visitor";
         default:
