@@ -374,15 +374,57 @@ static void vehicle_entry(ParkingSystem *sys) {
     puts("VEHICLE ENTRY\n");
 
     char registration[INPUT_TEXT];
-    if (!read_line("Vehicle registration: ", registration,
+    if (!read_line("Vehicle registration (leave blank for bicycle): ", registration,
                    sizeof registration)) {
         return;
     }
     trim(registration);
 
     Id slot_id = ID_NONE;
-    ParkingStatus status = parking_enter(sys, registration, time(NULL),
-                                         &slot_id);
+    ParkingStatus status;
+
+    if (registration[0] == '\0') {
+        /* Bicycle entry: look up by owner name since bicycles have no
+         * registration number. */
+        char owner[INPUT_TEXT];
+        if (!read_line("Owner name: ", owner, sizeof owner)) {
+            return;
+        }
+        trim(owner);
+
+        Id matches[16];
+        size_t match_count = parking_find_vehicles_by_owner_and_type(
+            sys, owner, VEHICLE_BICYCLE, matches,
+            sizeof matches / sizeof matches[0]);
+
+        if (match_count == 0) {
+            printf("\nNo bicycle registered for owner '%s'.\n", owner);
+            pause_screen();
+            return;
+        }
+
+        Id vehicle_id = ID_NONE;
+        if (match_count == 1) {
+            vehicle_id = matches[0];
+        } else {
+            /* Multiple bicycles for this owner - ask which one. */
+            printf("\nMultiple bicycles registered for %s:\n", owner);
+            for (size_t i = 0; i < match_count; i++) {
+                Vehicle *v = parking_vehicle_by_id(sys, matches[i]);
+                printf("  %zu. ID %lld\n", i + 1, (long long)v->id);
+            }
+            int choice = 0;
+            if (!read_int("Select bicycle: ", 1, (int)match_count, &choice)) {
+                return;
+            }
+            vehicle_id = matches[choice - 1];
+        }
+
+        status = parking_enter_by_id(sys, vehicle_id, time(NULL), &slot_id);
+    } else {
+        status = parking_enter(sys, registration, time(NULL), &slot_id);
+    }
+
     if (status == PARKING_OK) {
         printf("\nEntry recorded. Assigned slot %lld.\n", (long long)slot_id);
     } else {
