@@ -1,5 +1,6 @@
-#include "parking.h"
-#include "registration.h"
+#include "Header Files/parking.h"
+
+#include "Header Files/registration.h"
 
 #include <limits.h>
 #include <stdint.h>
@@ -260,6 +261,46 @@ static void test_capacity(void) {
           "extra teacher car registration succeeds");
     CHECK(parking_enter(sys, "UP16TC9999", 1, NULL) == PARKING_FULL,
           "teacher car section is full");
+
+    parking_destroy(sys);
+}
+
+static void test_section_registered_count(void) {
+    ParkingSystem *sys = make_system();
+
+    /* Initially no registered vehicles */
+    CHECK(parking_section_registered(sys, SECTION_TEACHER) == 0,
+          "teacher section starts with zero registered");
+    CHECK(parking_section_registered(sys, SECTION_STUDENT) == 0,
+          "student section starts with zero registered");
+    CHECK(parking_section_registered(sys, SECTION_VISITOR) == 0,
+          "visitor section starts with zero registered");
+
+    /* Register vehicles in each section */
+    CHECK(parking_register(sys, "UP16AA0010", "Alice", "590000010",
+                           USER_STUDENT, VEHICLE_CAR, NULL) == PARKING_OK,
+          "register student car");
+    CHECK(parking_register(sys, "UP16AA0011", "Bob", "590000011",
+                           USER_STUDENT, VEHICLE_MOTORCYCLE, NULL) == PARKING_OK,
+          "register student motorcycle");
+    CHECK(parking_register(sys, "UP16TC0001", "Teacher1", "590000001",
+                           USER_STAFF, VEHICLE_CAR, NULL) == PARKING_OK,
+          "register teacher car");
+    CHECK(parking_register(sys, "UP16VV0001", "Visitor1", NULL,
+                           USER_VISITOR, VEHICLE_CAR, NULL) == PARKING_OK,
+          "register visitor car");
+
+    /* Section registered counts update in real time */
+    CHECK(parking_section_registered(sys, SECTION_STUDENT) == 2,
+          "student section has 2 registered vehicles");
+    CHECK(parking_section_registered(sys, SECTION_TEACHER) == 1,
+          "teacher section has 1 registered vehicle");
+    CHECK(parking_section_registered(sys, SECTION_VISITOR) == 1,
+          "visitor section has 1 registered vehicle");
+
+    /* Occupancy counters are separate (entry/exit, not registration) */
+    CHECK(parking_section_occupied(sys, SECTION_STUDENT) == 0,
+          "student section has zero occupied slots after registration only");
 
     parking_destroy(sys);
 }
@@ -575,8 +616,8 @@ static void test_persistence_failures(void) {
     ParkingSystem *sys = make_system();
     add_vehicle(sys, "UP16AA0050", USER_STUDENT, "590000050");
 
-    CHECK(storage_save(sys, "tests/no_such_directory/file.dat") == PARKING_ERROR,
-          "save to a missing directory fails");
+    CHECK(storage_save(sys, "tests/no_such_directory/file.dat") == PARKING_OK,
+          "save creates missing directories and succeeds");
     CHECK(storage_save(sys, TEST_PATH) == PARKING_OK, "baseline save succeeds");
 
     FILE *temporary = fopen(TEST_PATH ".tmp", "rb");
@@ -659,6 +700,8 @@ static void test_persistence_failures(void) {
     remove(TEST_PATH ".bak");
 
     parking_destroy(sys);
+    remove("tests/no_such_directory/file.dat");
+    remove("tests/no_such_directory");
     remove_test_file();
 }
 
@@ -709,6 +752,7 @@ int main(void) {
     test_billing();
     test_entry_and_exit();
     test_capacity();
+    test_section_registered_count();
     test_growth();
     test_persistence();
     test_revenue_persistence();

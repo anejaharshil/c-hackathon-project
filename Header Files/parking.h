@@ -121,10 +121,17 @@ Vehicle *parking_vehicle_by_id(ParkingSystem *sys, Id id);
 
 ParkingStatus parking_enter(ParkingSystem *sys, const char *registration,
                             time_t now, Id *out_slot_id);
+ParkingStatus parking_enter_by_id(ParkingSystem *sys, Id vehicle_id,
+                                  time_t now, Id *out_slot_id);
 ParkingStatus parking_exit(ParkingSystem *sys, const char *registration,
                            time_t now, Receipt *out_receipt);
 ParkingSession *parking_active_session(ParkingSystem *sys, Id vehicle_id);
 size_t parking_sessions_for(const ParkingSystem *sys, Id vehicle_id);
+size_t parking_find_vehicles_by_owner_and_type(ParkingSystem *sys,
+                                               const char *owner,
+                                               VehicleType type,
+                                               Id *out_ids,
+                                               size_t max_out);
 
 long parking_compute_charge(UserType user_type, time_t entry, time_t exit);
 
@@ -135,6 +142,8 @@ long parking_total_revenue(const ParkingSystem *sys);
 /* Per-section / per-type slot counters */
 size_t parking_section_occupied(const ParkingSystem *sys, ParkingSection section);
 size_t parking_section_total(const ParkingSystem *sys, ParkingSection section);
+size_t parking_section_registered(const ParkingSystem *sys,
+                                  ParkingSection section);
 size_t parking_section_type_occupied(const ParkingSystem *sys,
                                      ParkingSection section,
                                      VehicleType type);

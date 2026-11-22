@@ -1,6 +1,6 @@
 // Header Files
-#include "parking.h"
-#include "registration.h"
+#include "Header Files/parking.h"
+#include "Header Files/registration.h"
 
 #include <limits.h>
 #include <stdint.h>
@@ -172,6 +172,24 @@ Vehicle *parking_find_vehicle(ParkingSystem *sys, const char *registration) {
     return NULL;
 }
 
+size_t parking_find_vehicles_by_owner_and_type(ParkingSystem *sys,
+                                               const char *owner,
+                                               VehicleType type,
+                                               Id *out_ids,
+                                               size_t max_out) {
+    if (sys == NULL || owner == NULL || out_ids == NULL || max_out == 0) {
+        return 0;
+    }
+    size_t count = 0;
+    for (size_t i = 0; i < sys->vehicle_count && count < max_out; i++) {
+        if (sys->vehicles[i].vehicle_type == type &&
+            strcmp(sys->vehicles[i].owner, owner) == 0) {
+            out_ids[count++] = sys->vehicles[i].id;
+        }
+    }
+    return count;
+}
+
 Vehicle *parking_vehicle_by_id(ParkingSystem *sys, Id id) {
     if (sys == NULL) {
         return NULL;
@@ -272,6 +290,62 @@ ParkingStatus parking_enter(ParkingSystem *sys, const char *registration,
 
     slot->available = 0;
     slot->vehicle_id = vehicle->id;
+
+    if (out_slot_id != NULL) {
+        *out_slot_id = slot->id;
+    }
+    return PARKING_OK;
+}
+
+ParkingStatus parking_enter_by_id(ParkingSystem *sys, Id vehicle_id,
+                                  time_t now, Id *out_slot_id) {
+    if (sys == NULL) {
+        return PARKING_INVALID;
+    }
+    Vehicle *vehicle = parking_vehicle_by_id(sys, vehicle_id);
+    if (vehicle == NULL) {
+        return PARKING_NOT_FOUND;
+    }
+    if (parking_active_session(sys, vehicle_id) != NULL) {
+        return PARKING_ALREADY_PARKED;
+    }
+
+    ParkingSection section = section_for_user_type(vehicle->user_type);
+
+    /* Find an available slot in the vehicle's section and type. */
+    ParkingSlot *slot = NULL;
+    for (size_t i = 0; i < sys->slot_count; i++) {
+        if (sys->slots[i].available &&
+            sys->slots[i].section == section &&
+            sys->slots[i].type == vehicle->vehicle_type) {
+            slot = &sys->slots[i];
+            break;
+        }
+    }
+    if (slot == NULL) {
+        return PARKING_FULL;
+    }
+    if (sys->session_count >= MAX_RECORDS || sys->next_id >= LLONG_MAX) {
+        return PARKING_LIMIT;
+    }
+
+    ParkingStatus status = grow_sessions(sys);
+    if (status != PARKING_OK) {
+        return status;
+    }
+
+    ParkingSession *session = &sys->sessions[sys->session_count];
+    session->id = sys->next_id++;
+    session->vehicle_id = vehicle_id;
+    session->slot_id = slot->id;
+    session->start_time = now;
+    session->end_time = 0;
+    session->charge = 0;
+    session->active = 1;
+    sys->session_count++;
+
+    slot->available = 0;
+    slot->vehicle_id = vehicle_id;
 
     if (out_slot_id != NULL) {
         *out_slot_id = slot->id;
@@ -406,6 +480,33 @@ size_t parking_section_total(const ParkingSystem *sys,
     size_t count = 0;
     for (size_t i = 0; i < sys->slot_count; i++) {
         if (sys->slots[i].section == section) {
+            count++;
+        }
+    }
+    return count;
+}
+
+size_t parking_section_registered(const ParkingSystem *sys,
+                                  ParkingSection section) {
+    if (sys == NULL) {
+        return 0;
+    }
+    UserType user_type;
+    switch (section) {
+        case SECTION_TEACHER:
+            user_type = USER_STAFF;
+            break;
+        case SECTION_STUDENT:
+            user_type = USER_STUDENT;
+            break;
+        case SECTION_VISITOR:
+        default:
+            user_type = USER_VISITOR;
+            break;
+    }
+    size_t count = 0;
+    for (size_t i = 0; i < sys->vehicle_count; i++) {
+        if (sys->vehicles[i].user_type == user_type) {
             count++;
         }
     }

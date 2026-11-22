@@ -1,18 +1,19 @@
 CC = gcc
 CFLAGS = -std=c17 -Wall -Wextra -Wpedantic -I.
 TARGET = parking
-SOURCES = main.c parking.c storage.c registration.c
+SOURCES = Codes/main.c Codes/parking.c Codes/storage.c Codes/registration.c
+LIB_SOURCES = Codes/parking.c Codes/storage.c Codes/registration.c
 TEST = tests/test_parking_system
 
 .PHONY: all run test asan test-asan clean
 
 all: $(TARGET)
 
-$(TARGET): $(SOURCES) parking.h
+$(TARGET): $(SOURCES)
 	$(CC) $(CFLAGS) $(SOURCES) -o $@
 
-$(TEST): tests/test_parking_system.c parking.c storage.c registration.c parking.h registration.h
-	$(CC) $(CFLAGS) tests/test_parking_system.c parking.c storage.c registration.c -o $@
+$(TEST): tests/test_parking_system.c $(LIB_SOURCES)
+	$(CC) $(CFLAGS) tests/test_parking_system.c $(LIB_SOURCES) -o $@
 
 asan:
 	$(CC) $(CFLAGS) -g -fsanitize=address,undefined -fno-omit-frame-pointer \
@@ -20,7 +21,7 @@ asan:
 
 test-asan:
 	$(CC) $(CFLAGS) -g -fsanitize=address,undefined -fno-omit-frame-pointer \
-		tests/test_parking_system.c parking.c storage.c registration.c \
+		tests/test_parking_system.c $(LIB_SOURCES) \
 		-o tests/test_parking_system_asan
 	./tests/test_parking_system_asan
 
