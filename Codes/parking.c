@@ -250,51 +250,7 @@ ParkingStatus parking_enter(ParkingSystem *sys, const char *registration,
     if (vehicle == NULL) {
         return PARKING_NOT_FOUND;
     }
-    if (parking_active_session(sys, vehicle->id) != NULL) {
-        return PARKING_ALREADY_PARKED;
-    }
-
-    ParkingSection section = section_for_user_type(vehicle->user_type);
-
-    /* Find an available slot in the vehicle's section and type. */
-    ParkingSlot *slot = NULL;
-    for (size_t i = 0; i < sys->slot_count; i++) {
-        if (sys->slots[i].available &&
-            sys->slots[i].section == section &&
-            sys->slots[i].type == vehicle->vehicle_type) {
-            slot = &sys->slots[i];
-            break;
-        }
-    }
-    if (slot == NULL) {
-        return PARKING_FULL;
-    }
-    if (sys->session_count >= MAX_RECORDS || sys->next_id >= LLONG_MAX) {
-        return PARKING_LIMIT;
-    }
-
-    ParkingStatus status = grow_sessions(sys);
-    if (status != PARKING_OK) {
-        return status;
-    }
-
-    ParkingSession *session = &sys->sessions[sys->session_count];
-    session->id = sys->next_id++;
-    session->vehicle_id = vehicle->id;
-    session->slot_id = slot->id;
-    session->start_time = now;
-    session->end_time = 0;
-    session->charge = 0;
-    session->active = 1;
-    sys->session_count++;
-
-    slot->available = 0;
-    slot->vehicle_id = vehicle->id;
-
-    if (out_slot_id != NULL) {
-        *out_slot_id = slot->id;
-    }
-    return PARKING_OK;
+    return parking_enter_by_id(sys, vehicle->id, now, out_slot_id);
 }
 
 ParkingStatus parking_enter_by_id(ParkingSystem *sys, Id vehicle_id,
