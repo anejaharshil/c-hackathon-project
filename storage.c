@@ -1,3 +1,4 @@
+// Header Files
 #include "parking.h"
 
 #include <errno.h>
@@ -7,57 +8,80 @@
 #include <stdlib.h>
 #include <string.h>
 
+// Global Variables
+// (none: all file-scope state is local to functions)
+
+// Macros
 #define STORAGE_MAGIC 0x504B4453u
 #define STORAGE_VERSION 2u
 #define BACKUP_ATTEMPTS 100
 #define TMP_SUFFIX ".tmp"
 
-static int write_u32(FILE *file, uint32_t value) {
-    return fwrite(&value, sizeof value, 1, file) == 1 ? 0 : -1;
-}
+// Function Declarations
+static int write_u32(FILE *file, uint32_t value);
+static int write_u64(FILE *file, uint64_t value);
+static int write_i64(FILE *file, int64_t value);
+static int write_i32(FILE *file, int32_t value);
+static int write_text(FILE *file, const char *text, size_t length);
+static int read_u32(FILE *file, uint32_t *value);
+static int read_u64(FILE *file, uint64_t *value);
+static int read_i64(FILE *file, int64_t *value);
+static int read_i32(FILE *file, int32_t *value);
+static int read_text(FILE *file, char *buffer, size_t length);
+static int save_to_file(const ParkingSystem *sys, FILE *file);
+static ParkingStatus load_vehicles(FILE *file, ParkingSystem *loaded,
+                                   uint64_t count, Id *max_id);
+static ParkingStatus load_slots(FILE *file, ParkingSystem *loaded,
+                                uint64_t count, Id *max_id);
+static ParkingStatus load_sessions(FILE *file, ParkingSystem *loaded,
+                                   uint64_t count, Id *max_id);
+static int vehicle_exists(const ParkingSystem *sys, Id id);
+static size_t slot_index_by_id(const ParkingSystem *sys, Id id);
+static int relationships_valid(const ParkingSystem *sys);
 
-static int write_u64(FILE *file, uint64_t value) {
-    return fwrite(&value, sizeof value, 1, file) == 1 ? 0 : -1;
-}
-
-static int write_i64(FILE *file, int64_t value) {
-    return fwrite(&value, sizeof value, 1, file) == 1 ? 0 : -1;
-}
-
-static int write_i32(FILE *file, int32_t value) {
-    return fwrite(&value, sizeof value, 1, file) == 1 ? 0 : -1;
-}
-
-static int write_text(FILE *file, const char *text, size_t length) {
-    return fwrite(text, 1, length, file) == length ? 0 : -1;
-}
-
-static int read_u32(FILE *file, uint32_t *value) {
-    return fread(value, sizeof *value, 1, file) == 1 ? 0 : -1;
-}
-
-static int read_u64(FILE *file, uint64_t *value) {
-    return fread(value, sizeof *value, 1, file) == 1 ? 0 : -1;
-}
-
-static int read_i64(FILE *file, int64_t *value) {
-    return fread(value, sizeof *value, 1, file) == 1 ? 0 : -1;
-}
-
-static int read_i32(FILE *file, int32_t *value) {
-    return fread(value, sizeof *value, 1, file) == 1 ? 0 : -1;
-}
-
-static int read_text(FILE *file, char *buffer, size_t length) {
-    if (fread(buffer, 1, length, file) != length) {
-        return -1;
+// Functions
+ParkingStatus storage_save(const ParkingSystem *sys, const char *path) {
+    if (sys == NULL || path == NULL) {
+        return PARKING_INVALID;
     }
-    if (memchr(buffer, '\0', length) == NULL) {
-        return -1;
+
+    size_t path_length = strlen(path);
+    size_t suffix_length = strlen(TMP_SUFFIX);
+    if (path_length > SIZE_MAX - suffix_length - 1) {
+        return PARKING_NO_MEMORY;
     }
-    size_t used = strlen(buffer);
-    memset(buffer + used, 0, length - used);
-    return 0;
+    size_t length = path_length + suffix_length + 1;
+    char *temporary = malloc(length);
+    if (temporary == NULL) {
+        return PARKING_NO_MEMORY;
+    }
+    snprintf(temporary, length, "%s%s", path, TMP_SUFFIX);
+
+    FILE *file = fopen(temporary, "wb");
+    if (file == NULL) {
+        free(temporary);
+        return PARKING_ERROR;
+    }
+
+    ParkingStatus status = PARKING_OK;
+    if (save_to_file(sys, file) != 0) {
+        status = PARKING_ERROR;
+    }
+    if (fclose(file) != 0 && status == PARKING_OK) {
+        status = PARKING_ERROR;
+    }
+
+    if (status == PARKING_OK) {
+        if (rename(temporary, path) != 0) {
+            remove(temporary);
+            status = PARKING_ERROR;
+        }
+    } else {
+        remove(temporary);
+    }
+
+    free(temporary);
+    return status;
 }
 
 static int save_to_file(const ParkingSystem *sys, FILE *file) {
@@ -108,48 +132,181 @@ static int save_to_file(const ParkingSystem *sys, FILE *file) {
     return 0;
 }
 
-ParkingStatus storage_save(const ParkingSystem *sys, const char *path) {
+ParkingStatus storage_load(ParkingSystem *sys, const char *path) {
     if (sys == NULL || path == NULL) {
         return PARKING_INVALID;
     }
 
-    size_t path_length = strlen(path);
-    size_t suffix_length = strlen(TMP_SUFFIX);
-    if (path_length > SIZE_MAX - suffix_length - 1) {
-        return PARKING_NO_MEMORY;
-    }
-    size_t length = path_length + suffix_length + 1;
-    char *temporary = malloc(length);
-    if (temporary == NULL) {
-        return PARKING_NO_MEMORY;
-    }
-    snprintf(temporary, length, "%s%s", path, TMP_SUFFIX);
-
-    FILE *file = fopen(temporary, "wb");
+    FILE *file = fopen(path, "rb");
     if (file == NULL) {
-        free(temporary);
+        return errno == ENOENT ? PARKING_NOT_FOUND : PARKING_ERROR;
+    }
+
+    ParkingSystem loaded;
+    memset(&loaded, 0, sizeof loaded);
+    loaded.next_id = 1;
+    ParkingStatus status = PARKING_OK;
+    uint32_t magic = 0;
+    uint32_t version = 0;
+
+    if (read_u32(file, &magic) != 0 || read_u32(file, &version) != 0 ||
+        magic != STORAGE_MAGIC || version != STORAGE_VERSION) {
+        status = PARKING_INVALID;
+        goto done;
+    }
+
+    int64_t next_id = 0;
+    uint64_t vehicle_count = 0;
+    uint64_t slot_count = 0;
+    uint64_t session_count = 0;
+    if (read_i64(file, &next_id) != 0 ||
+        read_u64(file, &vehicle_count) != 0 ||
+        read_u64(file, &slot_count) != 0 ||
+        read_u64(file, &session_count) != 0) {
+        status = PARKING_INVALID;
+        goto done;
+    }
+    if (next_id < 1 ||
+        vehicle_count > MAX_RECORDS ||
+        slot_count == 0 || slot_count > MAX_SLOTS ||
+        session_count > MAX_RECORDS ||
+        vehicle_count > SIZE_MAX / sizeof(Vehicle) ||
+        session_count > SIZE_MAX / sizeof(ParkingSession)) {
+        status = PARKING_INVALID;
+        goto done;
+    }
+
+    Id max_id = 0;
+    status = load_vehicles(file, &loaded, vehicle_count, &max_id);
+    if (status != PARKING_OK) {
+        goto done;
+    }
+    status = load_slots(file, &loaded, slot_count, &max_id);
+    if (status != PARKING_OK) {
+        goto done;
+    }
+    status = load_sessions(file, &loaded, session_count, &max_id);
+    if (status != PARKING_OK) {
+        goto done;
+    }
+    if (!relationships_valid(&loaded)) {
+        status = PARKING_INVALID;
+        goto done;
+    }
+
+    int extra = fgetc(file);
+    if (extra != EOF || ferror(file)) {
+        status = PARKING_INVALID;
+        goto done;
+    }
+
+    loaded.next_id = (Id)next_id;
+    if (loaded.next_id <= max_id) {
+        loaded.next_id = max_id + 1;
+    }
+
+    free(sys->vehicles);
+    free(sys->slots);
+    free(sys->sessions);
+    *sys = loaded;
+    loaded.vehicles = NULL;
+    loaded.slots = NULL;
+    loaded.sessions = NULL;
+    status = PARKING_OK;
+
+done:
+    (void)fclose(file);
+    if (status != PARKING_OK) {
+        free(loaded.vehicles);
+        free(loaded.slots);
+        free(loaded.sessions);
+    }
+    return status;
+}
+
+ParkingStatus storage_preserve(const char *path, char *backup_path,
+                               size_t backup_size) {
+    if (path == NULL || backup_path == NULL || backup_size == 0) {
+        return PARKING_INVALID;
+    }
+
+    FILE *probe = fopen(path, "rb");
+    if (probe == NULL) {
+        return PARKING_NOT_FOUND;
+    }
+    fclose(probe);
+
+    for (int attempt = 0; attempt < BACKUP_ATTEMPTS; attempt++) {
+        int written;
+        if (attempt == 0) {
+            written = snprintf(backup_path, backup_size, "%s.bak", path);
+        } else {
+            written = snprintf(backup_path, backup_size, "%s.bak.%d",
+                               path, attempt);
+        }
+        if (written < 0 || (size_t)written >= backup_size) {
+            return PARKING_ERROR;
+        }
+
+        FILE *existing = fopen(backup_path, "rb");
+        if (existing != NULL) {
+            fclose(existing);
+            continue;
+        }
+        if (rename(path, backup_path) == 0) {
+            return PARKING_OK;
+        }
         return PARKING_ERROR;
     }
+    return PARKING_ERROR;
+}
 
-    ParkingStatus status = PARKING_OK;
-    if (save_to_file(sys, file) != 0) {
-        status = PARKING_ERROR;
-    }
-    if (fclose(file) != 0 && status == PARKING_OK) {
-        status = PARKING_ERROR;
-    }
+static int write_u32(FILE *file, uint32_t value) {
+    return fwrite(&value, sizeof value, 1, file) == 1 ? 0 : -1;
+}
 
-    if (status == PARKING_OK) {
-        if (rename(temporary, path) != 0) {
-            remove(temporary);
-            status = PARKING_ERROR;
-        }
-    } else {
-        remove(temporary);
-    }
+static int write_u64(FILE *file, uint64_t value) {
+    return fwrite(&value, sizeof value, 1, file) == 1 ? 0 : -1;
+}
 
-    free(temporary);
-    return status;
+static int write_i64(FILE *file, int64_t value) {
+    return fwrite(&value, sizeof value, 1, file) == 1 ? 0 : -1;
+}
+
+static int write_i32(FILE *file, int32_t value) {
+    return fwrite(&value, sizeof value, 1, file) == 1 ? 0 : -1;
+}
+
+static int write_text(FILE *file, const char *text, size_t length) {
+    return fwrite(text, 1, length, file) == length ? 0 : -1;
+}
+
+static int read_u32(FILE *file, uint32_t *value) {
+    return fread(value, sizeof *value, 1, file) == 1 ? 0 : -1;
+}
+
+static int read_u64(FILE *file, uint64_t *value) {
+    return fread(value, sizeof *value, 1, file) == 1 ? 0 : -1;
+}
+
+static int read_i64(FILE *file, int64_t *value) {
+    return fread(value, sizeof *value, 1, file) == 1 ? 0 : -1;
+}
+
+static int read_i32(FILE *file, int32_t *value) {
+    return fread(value, sizeof *value, 1, file) == 1 ? 0 : -1;
+}
+
+static int read_text(FILE *file, char *buffer, size_t length) {
+    if (fread(buffer, 1, length, file) != length) {
+        return -1;
+    }
+    if (memchr(buffer, '\0', length) == NULL) {
+        return -1;
+    }
+    size_t used = strlen(buffer);
+    memset(buffer + used, 0, length - used);
+    return 0;
 }
 
 static ParkingStatus load_vehicles(FILE *file, ParkingSystem *loaded,
@@ -368,133 +525,4 @@ static int relationships_valid(const ParkingSystem *sys) {
         }
     }
     return 1;
-}
-
-ParkingStatus storage_load(ParkingSystem *sys, const char *path) {
-    if (sys == NULL || path == NULL) {
-        return PARKING_INVALID;
-    }
-
-    FILE *file = fopen(path, "rb");
-    if (file == NULL) {
-        return errno == ENOENT ? PARKING_NOT_FOUND : PARKING_ERROR;
-    }
-
-    ParkingSystem loaded;
-    memset(&loaded, 0, sizeof loaded);
-    loaded.next_id = 1;
-    ParkingStatus status = PARKING_OK;
-    uint32_t magic = 0;
-    uint32_t version = 0;
-
-    if (read_u32(file, &magic) != 0 || read_u32(file, &version) != 0 ||
-        magic != STORAGE_MAGIC || version != STORAGE_VERSION) {
-        status = PARKING_INVALID;
-        goto done;
-    }
-
-    int64_t next_id = 0;
-    uint64_t vehicle_count = 0;
-    uint64_t slot_count = 0;
-    uint64_t session_count = 0;
-    if (read_i64(file, &next_id) != 0 ||
-        read_u64(file, &vehicle_count) != 0 ||
-        read_u64(file, &slot_count) != 0 ||
-        read_u64(file, &session_count) != 0) {
-        status = PARKING_INVALID;
-        goto done;
-    }
-    if (next_id < 1 ||
-        vehicle_count > MAX_RECORDS ||
-        slot_count == 0 || slot_count > MAX_SLOTS ||
-        session_count > MAX_RECORDS ||
-        vehicle_count > SIZE_MAX / sizeof(Vehicle) ||
-        session_count > SIZE_MAX / sizeof(ParkingSession)) {
-        status = PARKING_INVALID;
-        goto done;
-    }
-
-    Id max_id = 0;
-    status = load_vehicles(file, &loaded, vehicle_count, &max_id);
-    if (status != PARKING_OK) {
-        goto done;
-    }
-    status = load_slots(file, &loaded, slot_count, &max_id);
-    if (status != PARKING_OK) {
-        goto done;
-    }
-    status = load_sessions(file, &loaded, session_count, &max_id);
-    if (status != PARKING_OK) {
-        goto done;
-    }
-    if (!relationships_valid(&loaded)) {
-        status = PARKING_INVALID;
-        goto done;
-    }
-
-    int extra = fgetc(file);
-    if (extra != EOF || ferror(file)) {
-        status = PARKING_INVALID;
-        goto done;
-    }
-
-    loaded.next_id = (Id)next_id;
-    if (loaded.next_id <= max_id) {
-        loaded.next_id = max_id + 1;
-    }
-
-    free(sys->vehicles);
-    free(sys->slots);
-    free(sys->sessions);
-    *sys = loaded;
-    loaded.vehicles = NULL;
-    loaded.slots = NULL;
-    loaded.sessions = NULL;
-    status = PARKING_OK;
-
-done:
-    (void)fclose(file);
-    if (status != PARKING_OK) {
-        free(loaded.vehicles);
-        free(loaded.slots);
-        free(loaded.sessions);
-    }
-    return status;
-}
-
-ParkingStatus storage_preserve(const char *path, char *backup_path,
-                               size_t backup_size) {
-    if (path == NULL || backup_path == NULL || backup_size == 0) {
-        return PARKING_INVALID;
-    }
-
-    FILE *probe = fopen(path, "rb");
-    if (probe == NULL) {
-        return PARKING_NOT_FOUND;
-    }
-    fclose(probe);
-
-    for (int attempt = 0; attempt < BACKUP_ATTEMPTS; attempt++) {
-        int written;
-        if (attempt == 0) {
-            written = snprintf(backup_path, backup_size, "%s.bak", path);
-        } else {
-            written = snprintf(backup_path, backup_size, "%s.bak.%d",
-                               path, attempt);
-        }
-        if (written < 0 || (size_t)written >= backup_size) {
-            return PARKING_ERROR;
-        }
-
-        FILE *existing = fopen(backup_path, "rb");
-        if (existing != NULL) {
-            fclose(existing);
-            continue;
-        }
-        if (rename(path, backup_path) == 0) {
-            return PARKING_OK;
-        }
-        return PARKING_ERROR;
-    }
-    return PARKING_ERROR;
 }

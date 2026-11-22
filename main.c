@@ -1,3 +1,4 @@
+// Header Files
 #include "parking.h"
 
 #include <errno.h>
@@ -6,12 +7,95 @@
 #include <string.h>
 #include <time.h>
 
+// Global Variables
+static int saving_enabled = 1;
+
+// Macros
 #define TEXT_SIZE 32
 #define INPUT_TEXT 128
 #define BACKUP_PATH_SIZE 512
 
-static int saving_enabled = 1;
+// Function Declarations
+static int my_isspace(char c);
+static void clear_screen(void);
+static int read_line(const char *prompt, char *buffer, size_t size);
+static void trim(char *text);
+static int read_int(const char *prompt, int minimum, int maximum, int *out);
+static void pause_screen(void);
+static void print_header(const ParkingSystem *sys);
+static void print_menu(void);
+static void format_time(time_t value, char *buffer, size_t size);
+static void format_duration(long seconds, char *buffer, size_t size);
+static const char *status_message(ParkingStatus status);
+static ParkingStatus save_state(const ParkingSystem *sys);
+static void warn_save(ParkingStatus status);
+static ParkingSystem *load_system(void);
+static void register_vehicle(ParkingSystem *sys);
+static void vehicle_entry(ParkingSystem *sys);
+static void print_receipt(const Receipt *receipt);
+static void vehicle_exit(ParkingSystem *sys);
+static void parking_status(ParkingSystem *sys);
+static void search_vehicle(ParkingSystem *sys);
+static void statistics(const ParkingSystem *sys);
 
+// main function
+int main(void) {
+    ParkingSystem *sys = load_system();
+    if (sys == NULL) {
+        return 1;
+    }
+
+    int running = 1;
+    while (running) {
+        clear_screen();
+        print_header(sys);
+        print_menu();
+
+        int choice = 0;
+        if (!read_int("\nEnter choice: ", 0, 6, &choice)) {
+            break;
+        }
+
+        switch (choice) {
+            case 1:
+                register_vehicle(sys);
+                break;
+            case 2:
+                vehicle_entry(sys);
+                break;
+            case 3:
+                vehicle_exit(sys);
+                break;
+            case 4:
+                parking_status(sys);
+                break;
+            case 5:
+                search_vehicle(sys);
+                break;
+            case 6:
+                statistics(sys);
+                break;
+            case 0:
+                running = 0;
+                break;
+            default:
+                break;
+        }
+    }
+
+    ParkingStatus saved = save_state(sys);
+    clear_screen();
+    if (saved == PARKING_OK) {
+        puts("Data saved. Goodbye.");
+    } else {
+        puts("Warning: data could not be saved. Your changes may be lost.");
+        pause_screen();
+    }
+    parking_destroy(sys);
+    return 0;
+}
+
+// Functions
 static int my_isspace(char c) {
     return c == ' ' || c == '\t' || c == '\n' ||
            c == '\v' || c == '\f' || c == '\r';
@@ -418,60 +502,4 @@ static void statistics(const ParkingSystem *sys) {
     printf("Occupancy:           %d%%\n", occupancy);
     printf("Total revenue:       Rs. %ld\n", parking_total_revenue(sys));
     pause_screen();
-}
-
-int main(void) {
-    ParkingSystem *sys = load_system();
-    if (sys == NULL) {
-        return 1;
-    }
-
-    int running = 1;
-    while (running) {
-        clear_screen();
-        print_header(sys);
-        print_menu();
-
-        int choice = 0;
-        if (!read_int("\nEnter choice: ", 0, 6, &choice)) {
-            break;
-        }
-
-        switch (choice) {
-            case 1:
-                register_vehicle(sys);
-                break;
-            case 2:
-                vehicle_entry(sys);
-                break;
-            case 3:
-                vehicle_exit(sys);
-                break;
-            case 4:
-                parking_status(sys);
-                break;
-            case 5:
-                search_vehicle(sys);
-                break;
-            case 6:
-                statistics(sys);
-                break;
-            case 0:
-                running = 0;
-                break;
-            default:
-                break;
-        }
-    }
-
-    ParkingStatus saved = save_state(sys);
-    clear_screen();
-    if (saved == PARKING_OK) {
-        puts("Data saved. Goodbye.");
-    } else {
-        puts("Warning: data could not be saved. Your changes may be lost.");
-        pause_screen();
-    }
-    parking_destroy(sys);
-    return 0;
 }

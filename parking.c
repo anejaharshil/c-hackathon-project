@@ -1,3 +1,4 @@
+// Header Files
 #include "parking.h"
 #include "registration.h"
 
@@ -7,93 +8,26 @@
 #include <stdlib.h>
 #include <string.h>
 
+// Global Variables
+// (none: all file-scope state is local to functions)
+
+// Macros
 #define INITIAL_CAPACITY 8
 
-static int string_ok(const char *text, size_t max_length) {
-    return text != NULL && text[0] != '\0' && strlen(text) < max_length;
-}
-
-static int user_type_ok(UserType type) {
-    return type >= USER_STUDENT && type <= USER_VISITOR;
-}
-
-static int vehicle_type_ok(VehicleType type) {
-    return type >= VEHICLE_CAR && type <= VEHICLE_BICYCLE;
-}
-
-static void copy_text(char *destination, size_t size, const char *source) {
-    snprintf(destination, size, "%s", source);
-}
-
+// Function Declarations
+static int string_ok(const char *text, size_t max_length);
+static int user_type_ok(UserType type);
+static int vehicle_type_ok(VehicleType type);
+static void copy_text(char *destination, size_t size, const char *source);
 static int registration_taken(const ParkingSystem *sys,
-                              const char *registration) {
-    for (size_t i = 0; i < sys->vehicle_count; i++) {
-        if (strcmp(sys->vehicles[i].registration, registration) == 0) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
+                              const char *registration);
 static int institution_taken(const ParkingSystem *sys,
-                             const char *institution_id, UserType user_type) {
-    if (user_type == USER_VISITOR) {
-        return 0;
-    }
-    for (size_t i = 0; i < sys->vehicle_count; i++) {
-        const Vehicle *vehicle = &sys->vehicles[i];
-        if (vehicle->user_type == user_type &&
-            strcmp(vehicle->institution_id, institution_id) == 0) {
-            return 1;
-        }
-    }
-    return 0;
-}
+                             const char *institution_id,
+                             UserType user_type);
+static ParkingStatus grow_vehicles(ParkingSystem *sys);
+static ParkingStatus grow_sessions(ParkingSystem *sys);
 
-static ParkingStatus grow_vehicles(ParkingSystem *sys) {
-    if (sys->vehicle_count < sys->vehicle_capacity) {
-        return PARKING_OK;
-    }
-    if (sys->vehicle_capacity > SIZE_MAX / 2) {
-        return PARKING_NO_MEMORY;
-    }
-    size_t capacity = sys->vehicle_capacity == 0
-                          ? INITIAL_CAPACITY
-                          : sys->vehicle_capacity * 2;
-    if (capacity > SIZE_MAX / sizeof(Vehicle)) {
-        return PARKING_NO_MEMORY;
-    }
-    Vehicle *grown = realloc(sys->vehicles, capacity * sizeof *grown);
-    if (grown == NULL) {
-        return PARKING_NO_MEMORY;
-    }
-    sys->vehicles = grown;
-    sys->vehicle_capacity = capacity;
-    return PARKING_OK;
-}
-
-static ParkingStatus grow_sessions(ParkingSystem *sys) {
-    if (sys->session_count < sys->session_capacity) {
-        return PARKING_OK;
-    }
-    if (sys->session_capacity > SIZE_MAX / 2) {
-        return PARKING_NO_MEMORY;
-    }
-    size_t capacity = sys->session_capacity == 0
-                          ? INITIAL_CAPACITY
-                          : sys->session_capacity * 2;
-    if (capacity > SIZE_MAX / sizeof(ParkingSession)) {
-        return PARKING_NO_MEMORY;
-    }
-    ParkingSession *grown = realloc(sys->sessions, capacity * sizeof *grown);
-    if (grown == NULL) {
-        return PARKING_NO_MEMORY;
-    }
-    sys->sessions = grown;
-    sys->session_capacity = capacity;
-    return PARKING_OK;
-}
-
+// Functions
 ParkingSystem *parking_create(int slot_count) {
     if (slot_count <= 0 || slot_count > MAX_SLOTS) {
         return NULL;
@@ -429,4 +363,90 @@ const char *parking_vehicle_type_name(VehicleType type) {
         default:
             return "Unknown";
     }
+}
+
+static int string_ok(const char *text, size_t max_length) {
+    return text != NULL && text[0] != '\0' && strlen(text) < max_length;
+}
+
+static int user_type_ok(UserType type) {
+    return type >= USER_STUDENT && type <= USER_VISITOR;
+}
+
+static int vehicle_type_ok(VehicleType type) {
+    return type >= VEHICLE_CAR && type <= VEHICLE_BICYCLE;
+}
+
+static void copy_text(char *destination, size_t size, const char *source) {
+    snprintf(destination, size, "%s", source);
+}
+
+static int registration_taken(const ParkingSystem *sys,
+                              const char *registration) {
+    for (size_t i = 0; i < sys->vehicle_count; i++) {
+        if (strcmp(sys->vehicles[i].registration, registration) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int institution_taken(const ParkingSystem *sys,
+                             const char *institution_id,
+                             UserType user_type) {
+    if (user_type == USER_VISITOR) {
+        return 0;
+    }
+    for (size_t i = 0; i < sys->vehicle_count; i++) {
+        const Vehicle *vehicle = &sys->vehicles[i];
+        if (vehicle->user_type == user_type &&
+            strcmp(vehicle->institution_id, institution_id) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static ParkingStatus grow_vehicles(ParkingSystem *sys) {
+    if (sys->vehicle_count < sys->vehicle_capacity) {
+        return PARKING_OK;
+    }
+    if (sys->vehicle_capacity > SIZE_MAX / 2) {
+        return PARKING_NO_MEMORY;
+    }
+    size_t capacity = sys->vehicle_capacity == 0
+                          ? INITIAL_CAPACITY
+                          : sys->vehicle_capacity * 2;
+    if (capacity > SIZE_MAX / sizeof(Vehicle)) {
+        return PARKING_NO_MEMORY;
+    }
+    Vehicle *grown = realloc(sys->vehicles, capacity * sizeof *grown);
+    if (grown == NULL) {
+        return PARKING_NO_MEMORY;
+    }
+    sys->vehicles = grown;
+    sys->vehicle_capacity = capacity;
+    return PARKING_OK;
+}
+
+static ParkingStatus grow_sessions(ParkingSystem *sys) {
+    if (sys->session_count < sys->session_capacity) {
+        return PARKING_OK;
+    }
+    if (sys->session_capacity > SIZE_MAX / 2) {
+        return PARKING_NO_MEMORY;
+    }
+    size_t capacity = sys->session_capacity == 0
+                          ? INITIAL_CAPACITY
+                          : sys->session_capacity * 2;
+    if (capacity > SIZE_MAX / sizeof(ParkingSession)) {
+        return PARKING_NO_MEMORY;
+    }
+    ParkingSession *grown = realloc(sys->sessions, capacity * sizeof *grown);
+    if (grown == NULL) {
+        return PARKING_NO_MEMORY;
+    }
+    sys->sessions = grown;
+    sys->session_capacity = capacity;
+    return PARKING_OK;
 }
