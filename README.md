@@ -7,12 +7,12 @@ exit times, prints receipts, and stores all records in a binary `.dat` file.
 ## Files
 
 ```
-main.c        Console interface, input handling and menu navigation
-parking.c     Vehicles, slots, sessions, billing and dynamic arrays
-parking.h     Shared structures, enums, constants and declarations
-registration.c   Indian registration and campus ID validation
-registration.h   Validation declarations
-storage.c     Binary .dat loading, saving and validation
+Codes/main.c        Console interface, input handling and menu navigation
+Codes/parking.c     Vehicles, slots, sessions, billing and dynamic arrays
+Codes/storage.c     Binary .dat loading, saving and validation
+Codes/registration.c   Indian registration and campus ID validation
+Header Files/parking.h     Shared structures, enums, constants and declarations
+Header Files/registration.h   Validation declarations
 data/         Runtime save file (directory kept in version control)
 tests/        Automated regression tests
 Makefile
@@ -31,7 +31,7 @@ make
 The compiler flags are:
 
 ```sh
-gcc -std=c17 -Wall -Wextra -Wpedantic -I. main.c parking.c storage.c registration.c -o parking
+gcc -std=c17 -Wall -Wextra -Wpedantic -I. Codes/main.c Codes/parking.c Codes/storage.c Codes/registration.c -o parking
 ```
 
 Sanitizer builds:
