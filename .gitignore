@@ -1,6 +1,5 @@
 # Compiled executables
 parking
-parking_asan
 *.exe
 
 # Object files
@@ -11,15 +10,23 @@ parking_asan
 *_asan
 *_ubsan
 
+# Test binaries
+tests/test_parking_system
+
 # Temporary files
 *.tmp
 
 # Runtime data files
 data/parking.dat
-data/parking.dat.tmp
+data/parking.dat.bak*
 
-# Generated CSV reports
-reports/completed_sessions.csv
+# Release binaries
+Executables/
+"release/Smart Campus Parking Management System "
+
+# Test data files
+tests/*.dat
+tests/*.dat.bak*
 
 # IDE and editor files
 .idea/
