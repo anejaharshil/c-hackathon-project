@@ -174,6 +174,10 @@ static void test_billing(void) {
           "student parking is always free");
     CHECK(parking_compute_charge(USER_STAFF, base, base + 99999) == 0,
           "staff parking is always free");
+    /* Large duration must not overflow monetary fields. */
+    CHECK(parking_compute_charge(USER_VISITOR, base,
+                                 base + (time_t)3600 * (time_t)1000000) > 0,
+          "large duration produces positive charge without overflow");
 }
 
 static void test_entry_and_exit(void) {
@@ -425,6 +429,37 @@ static void test_auto_save_entry_exit(void) {
     remove("data/parking.dat");
     remove("data/parking.dat.bak");
     remove("data/parking.dat.tmp");
+}
+
+static void test_time_validation(void) {
+    ParkingSystem *sys = make_system();
+    add_vehicle(sys, "UP16AA0200", USER_VISITOR, NULL);
+    time_t base = 1700000000;
+    Id slot_id = ID_NONE;
+    Receipt receipt;
+
+    CHECK(parking_enter(sys, "UP16AA0200", base, &slot_id) == PARKING_OK,
+          "visitor entry succeeds");
+    CHECK(parking_occupied_slots(sys) == 1,
+          "slot occupied after entry");
+
+    /* Exit before entry is rejected. */
+    CHECK(parking_exit(sys, "UP16AA0200", base - 1, &receipt) ==
+              PARKING_INVALID_TIME,
+          "exit before entry is rejected");
+    CHECK(parking_occupied_slots(sys) == 1,
+          "slot still occupied after rejected exit");
+    CHECK(parking_active_sessions(sys) == 1,
+          "session still active after rejected exit");
+
+    /* Zero-duration exit (exit == entry) is free. */
+    CHECK(parking_exit(sys, "UP16AA0200", base, &receipt) == PARKING_OK &&
+              receipt.charge == 0,
+          "zero-duration exit is free");
+    CHECK(parking_occupied_slots(sys) == 0,
+          "slot released after zero-duration exit");
+
+    parking_destroy(sys);
 }
 
 static void test_growth(void) {
@@ -878,6 +913,7 @@ int main(void) {
     test_bicycle_entry_exit_by_id();
     test_auto_save_registration();
     test_auto_save_entry_exit();
+    test_time_validation();
     test_growth();
     test_persistence();
     test_revenue_persistence();

@@ -242,6 +242,8 @@ static const char *status_message(ParkingStatus status) {
             return "Invalid registration. Use the format UP16AB1234 with a valid state and RTO code.";
         case PARKING_INVALID_ID:
             return "Invalid ID. Students need a 9-digit SAP ID (590000000-590099999); teachers need a 9-digit ID.";
+        case PARKING_INVALID_TIME:
+            return "Exit time is before entry time. Please correct the timestamp.";
         default:
             return "The operation could not be completed.";
     }

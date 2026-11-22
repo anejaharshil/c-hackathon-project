@@ -349,6 +349,11 @@ ParkingStatus parking_exit_by_id(ParkingSystem *sys, Id vehicle_id,
         return PARKING_NOT_PARKED;
     }
 
+    /* Reject backwards-clock exits: exit must not be before entry. */
+    if (now < session->start_time) {
+        return PARKING_INVALID_TIME;
+    }
+
     long charge = parking_compute_charge(vehicle->user_type,
                                          session->start_time, now);
     long duration = now > session->start_time
