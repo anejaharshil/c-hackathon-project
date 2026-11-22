@@ -327,16 +327,16 @@ long parking_compute_charge(UserType user_type, time_t entry, time_t exit) {
     return (long)(hours * VISITOR_RATE);
 }
 
-ParkingStatus parking_exit(ParkingSystem *sys, const char *registration,
-                           time_t now, Receipt *out_receipt) {
+ParkingStatus parking_exit_by_id(ParkingSystem *sys, Id vehicle_id,
+                                 time_t now, Receipt *out_receipt) {
     if (sys == NULL || out_receipt == NULL) {
         return PARKING_INVALID;
     }
-    Vehicle *vehicle = parking_find_vehicle(sys, registration);
+    Vehicle *vehicle = parking_vehicle_by_id(sys, vehicle_id);
     if (vehicle == NULL) {
         return PARKING_NOT_FOUND;
     }
-    ParkingSession *session = parking_active_session(sys, vehicle->id);
+    ParkingSession *session = parking_active_session(sys, vehicle_id);
     if (session == NULL) {
         return PARKING_NOT_PARKED;
     }
@@ -369,6 +369,18 @@ ParkingStatus parking_exit(ParkingSystem *sys, const char *registration,
     out_receipt->duration_seconds = duration;
     out_receipt->charge = session->charge;
     return PARKING_OK;
+}
+
+ParkingStatus parking_exit(ParkingSystem *sys, const char *registration,
+                           time_t now, Receipt *out_receipt) {
+    if (sys == NULL) {
+        return PARKING_INVALID;
+    }
+    Vehicle *vehicle = parking_find_vehicle(sys, registration);
+    if (vehicle == NULL) {
+        return PARKING_NOT_FOUND;
+    }
+    return parking_exit_by_id(sys, vehicle->id, now, out_receipt);
 }
 
 size_t parking_occupied_slots(const ParkingSystem *sys) {

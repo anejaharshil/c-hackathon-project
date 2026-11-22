@@ -125,6 +125,8 @@ ParkingStatus parking_enter_by_id(ParkingSystem *sys, Id vehicle_id,
                                   time_t now, Id *out_slot_id);
 ParkingStatus parking_exit(ParkingSystem *sys, const char *registration,
                            time_t now, Receipt *out_receipt);
+ParkingStatus parking_exit_by_id(ParkingSystem *sys, Id vehicle_id,
+                                 time_t now, Receipt *out_receipt);
 ParkingSession *parking_active_session(ParkingSystem *sys, Id vehicle_id);
 size_t parking_sessions_for(const ParkingSystem *sys, Id vehicle_id);
 size_t parking_find_vehicles_by_owner_and_type(ParkingSystem *sys,

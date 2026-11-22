@@ -305,6 +305,62 @@ static void test_section_registered_count(void) {
     parking_destroy(sys);
 }
 
+static void test_bicycle_entry_exit_by_id(void) {
+    ParkingSystem *sys = make_system();
+
+    /* Register two bicycles with same owner, no registration numbers. */
+    CHECK(parking_register(sys, "", "Cyclist", "590000100", USER_STUDENT,
+                           VEHICLE_BICYCLE, NULL) == PARKING_OK,
+          "register bicycle 1 without registration");
+    CHECK(parking_register(sys, "", "Cyclist", "590000101", USER_STUDENT,
+                           VEHICLE_BICYCLE, NULL) == PARKING_OK,
+          "register bicycle 2 without registration");
+
+    /* Find both bicycles for the same owner. */
+    Id bikes[2];
+    size_t n = parking_find_vehicles_by_owner_and_type(
+        sys, "Cyclist", VEHICLE_BICYCLE, bikes, 2);
+    CHECK(n == 2, "found two bicycles for same owner");
+
+    /* Enter bicycle 1 by ID. */
+    Id slot1 = ID_NONE;
+    CHECK(parking_enter_by_id(sys, bikes[0], 1700000000, &slot1) == PARKING_OK,
+          "enter bicycle 1 by ID succeeds");
+    CHECK(slot1 != ID_NONE, "bicycle 1 assigned a slot");
+
+    /* Enter bicycle 2 by ID — must get a different slot. */
+    Id slot2 = ID_NONE;
+    CHECK(parking_enter_by_id(sys, bikes[1], 1700000000, &slot2) == PARKING_OK,
+          "enter bicycle 2 by ID succeeds");
+    CHECK(slot2 != ID_NONE, "bicycle 2 assigned a slot");
+    CHECK(slot1 != slot2, "different slots assigned");
+
+    /* Exit bicycle 1 by ID. */
+    Receipt receipt;
+    CHECK(parking_exit_by_id(sys, bikes[0], 1700001800, &receipt) == PARKING_OK &&
+              receipt.charge == 0,
+          "exit bicycle 1 by ID succeeds");
+    CHECK(receipt.duration_seconds == 1800,
+          "bicycle exit duration recorded");
+
+    /* Bicycle 2 still parked. */
+    CHECK(parking_occupied_slots(sys) == 1,
+          "bicycle 2 still occupies a slot");
+    Vehicle *bike2 = parking_vehicle_by_id(sys, bikes[1]);
+    CHECK(bike2 != NULL && parking_active_session(sys, bike2->id) != NULL,
+          "bicycle 2 session still active");
+
+    /* Reject an invalid bicycle ID. */
+    CHECK(parking_enter_by_id(sys, 99999, 1700000000, &slot1) ==
+              PARKING_NOT_FOUND,
+          "enter with invalid ID rejected");
+    CHECK(parking_exit_by_id(sys, 99999, 1700000000, &receipt) ==
+              PARKING_NOT_FOUND,
+          "exit with invalid ID rejected");
+
+    parking_destroy(sys);
+}
+
 static void test_growth(void) {
     ParkingSystem *sys = make_system();
     char registration[32];
@@ -753,6 +809,7 @@ int main(void) {
     test_entry_and_exit();
     test_capacity();
     test_section_registered_count();
+    test_bicycle_entry_exit_by_id();
     test_growth();
     test_persistence();
     test_revenue_persistence();
