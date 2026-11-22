@@ -2,7 +2,6 @@
 #include "Header Files/parking.h"
 #include "Header Files/registration.h"
 
-#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -153,9 +152,8 @@ static int read_int(const char *prompt, int minimum, int maximum, int *out) {
         trim(buffer);
 
         char *end = NULL;
-        errno = 0;
         long value = strtol(buffer, &end, 10);
-        if (errno == 0 && end != buffer && *end == '\0' &&
+        if (end != buffer && *end == '\0' &&
             value >= minimum && value <= maximum) {
             *out = (int)value;
             return 1;

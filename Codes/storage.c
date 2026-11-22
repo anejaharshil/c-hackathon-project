@@ -1,7 +1,6 @@
 // Header Files
 #include "Header Files/parking.h"
 
-#include <errno.h>
 #include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -57,9 +56,7 @@ ParkingStatus storage_save(const ParkingSystem *sys, const char *path) {
         char *slash = strrchr(dir, '/');
         if (slash != NULL) {
             *slash = '\0';
-            if (mkdir(dir, 0755) != 0 && errno != EEXIST) {
-                return PARKING_ERROR;
-            }
+            (void)mkdir(dir, 0755);
         }
     }
 
@@ -159,7 +156,7 @@ ParkingStatus storage_load(ParkingSystem *sys, const char *path) {
 
     FILE *file = fopen(path, "rb");
     if (file == NULL) {
-        return errno == ENOENT ? PARKING_NOT_FOUND : PARKING_ERROR;
+        return PARKING_NOT_FOUND;
     }
 
     ParkingSystem loaded;
