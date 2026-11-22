@@ -1,5 +1,6 @@
 // Header Files
 #include "parking.h"
+#include "registration.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -296,35 +297,66 @@ static void register_vehicle(ParkingSystem *sys) {
     UserType user_type = (UserType)(category - 1);
 
     char owner[INPUT_TEXT];
-    char registration[INPUT_TEXT];
-    char institution[INPUT_TEXT] = "-";
-
     if (!read_line("Owner name: ", owner, sizeof owner)) {
         return;
     }
     trim(owner);
-    if (!read_line("Vehicle registration (e.g. UP16AB1234): ", registration,
-                   sizeof registration)) {
-        return;
-    }
-    trim(registration);
 
-    if (user_type != USER_VISITOR) {
-        const char *prompt = user_type == USER_STUDENT
-                                 ? "SAP ID (590000000-590099999): "
-                                 : "Teacher ID (9 digits): ";
-        if (!read_line(prompt, institution, sizeof institution)) {
-            return;
-        }
-        trim(institution);
-    }
-
+    /* Vehicle type is asked before registration because a bicycle may not
+     * carry a registration number. */
     int kind = 0;
     if (!read_int("Vehicle type (1 Car, 2 Motorcycle, 3 Bicycle): ", 1, 3,
                   &kind)) {
         return;
     }
     VehicleType vehicle_type = (VehicleType)(kind - 1);
+
+    char registration[INPUT_TEXT] = "";
+    if (vehicle_type != VEHICLE_BICYCLE) {
+        for (;;) {
+            if (!read_line("Vehicle registration (e.g. UP16AB1234): ",
+                           registration, sizeof registration)) {
+                return;
+            }
+            trim(registration);
+            char normalized[16];
+            if (registration_normalize(normalized, sizeof normalized,
+                                       registration)) {
+                for (size_t i = 0; normalized[i] != '\0'; i++) {
+                    registration[i] = normalized[i];
+                }
+                break;
+            }
+            puts("Invalid registration. Use the format UP16AB1234 with a "
+                 "valid state and RTO code.");
+            puts("Please retype the registration number.");
+        }
+    }
+
+    char institution[INPUT_TEXT] = "-";
+    if (user_type != USER_VISITOR) {
+        const char *prompt = user_type == USER_STUDENT
+                                 ? "SAP ID (590000000-590099999): "
+                                 : "Teacher ID (9 digits): ";
+        const char *bad_msg = user_type == USER_STUDENT
+                                  ? "Invalid SAP ID. Enter a 9-digit value "
+                                    "between 590000000 and 590099999."
+                                  : "Invalid Teacher ID. Enter a 9-digit number.";
+        for (;;) {
+            if (!read_line(prompt, institution, sizeof institution)) {
+                return;
+            }
+            trim(institution);
+            int id_ok = user_type == USER_STUDENT
+                            ? sap_id_is_valid(institution)
+                            : teacher_id_is_valid(institution);
+            if (id_ok) {
+                break;
+            }
+            puts(bad_msg);
+            puts("Please retype the ID.");
+        }
+    }
 
     Id id = ID_NONE;
     ParkingStatus status = parking_register(sys, registration, owner,

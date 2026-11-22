@@ -77,8 +77,12 @@ ParkingStatus parking_register(ParkingSystem *sys, const char *registration,
         return PARKING_INVALID;
     }
 
-    /* Validate and normalize the vehicle registration. */
-    if (!registration_normalize(normalized, sizeof normalized, registration)) {
+    /* Bicycles may not carry a registration number; an empty registration is
+     * allowed for them. Non-bicycles must always provide a valid one. */
+    if (vehicle_type == VEHICLE_BICYCLE) {
+        normalized[0] = '\0';
+    } else if (!registration_normalize(normalized, sizeof normalized,
+                                       registration)) {
         return PARKING_INVALID_REGISTRATION;
     }
 
@@ -93,6 +97,8 @@ ParkingStatus parking_register(ParkingSystem *sys, const char *registration,
         }
     }
 
+    /* An empty registration (bicycle) is not checked for duplication;
+     * registration_taken also returns 0 for empty strings. */
     if (registration_taken(sys, normalized)) {
         return PARKING_DUPLICATE;
     }
@@ -383,6 +389,9 @@ static void copy_text(char *destination, size_t size, const char *source) {
 
 static int registration_taken(const ParkingSystem *sys,
                               const char *registration) {
+    if (registration == NULL || registration[0] == '\0') {
+        return 0;
+    }
     for (size_t i = 0; i < sys->vehicle_count; i++) {
         if (strcmp(sys->vehicles[i].registration, registration) == 0) {
             return 1;
