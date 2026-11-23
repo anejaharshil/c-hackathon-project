@@ -1,6 +1,7 @@
 // Header Files
 #include "Header Files/parking.h"
 #include "Header Files/registration.h"
+#include "Header Files/map.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -51,7 +52,7 @@ int main(void) {
         print_menu();
 
         int choice = 0;
-        if (!read_int("\nEnter choice: ", 0, 6, &choice)) {
+        if (!read_int("\nEnter choice: ", 0, 7, &choice)) {
             break;
         }
 
@@ -73,6 +74,10 @@ int main(void) {
                 break;
             case 6:
                 statistics(sys);
+                break;
+            case 7:
+                view_campus_map(sys);
+                pause_screen();
                 break;
             case 0:
                 running = 0;
@@ -194,6 +199,7 @@ static void print_menu(void) {
     printf("4. Parking Status\n");
     printf("5. Search Vehicle\n");
     printf("6. Statistics\n");
+    printf("7. View Campus Map\n");
     printf("0. Exit\n");
     printf("========================================\n");
 }

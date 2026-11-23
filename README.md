@@ -50,6 +50,7 @@ make asan
 4. Parking Status
 5. Search Vehicle
 6. Statistics
+7. View Campus Map
 0. Exit
 ```
 
@@ -129,6 +130,27 @@ It cannot be converted without losing information, so it is not loaded. If an
 incompatible or corrupt file is found, the application explains the problem,
 renames the file to `data/parking.dat.bak` (or `.bak.1`, `.bak.2`, ...), and
 starts with an empty database.
+
+## Campus Map
+
+Option 7 opens a top-down campus masterplan rendered in the terminal. The map
+shows the three parking lots geographically separated across campus:
+
+- Teacher Parking (east)
+- Student Parking (west)
+- Visitor Parking (south)
+
+Each lot contains three vehicle-specific sections — Car, Motorcycle and
+Bicycle — for nine parking sections in total. Every bay corresponds to a real
+`ParkingSlot` record and is labelled with its slot id (for example `C16` for
+student car slot 16).
+
+Available bays are shown empty; occupied bays are shown filled. The occupancy
+reflects the live in-memory state, so entering or exiting a vehicle updates the
+map immediately. Records persist across restarts through `data/parking.dat`.
+
+On terminals narrower than the map, the layout still renders but may wrap; the
+full campus remains visible via the main map view.
 
 ## Tests
 

@@ -1,6 +1,7 @@
 #include "Header Files/parking.h"
 
 #include "Header Files/registration.h"
+#include "Header Files/map.h"
 
 #include <limits.h>
 #include <stdint.h>
@@ -461,6 +462,83 @@ static void test_time_validation(void) {
     parking_destroy(sys);
 }
 
+static void test_map_all_lots_sections(void) {
+    ParkingSystem *sys = make_system();
+
+    /* All three lots present, each with Car/Motorcycle/Bicycle sections. */
+    for (int s = 0; s < SECTION_COUNT; s++) {
+        for (int t = 0; t < VEHICLE_TYPE_COUNT; t++) {
+            CHECK(parking_section_type_total(sys, (ParkingSection)s,
+                                             (VehicleType)t) == 5,
+                  "section/type pool has five slots");
+        }
+    }
+
+    /* Every slot id 1..45 appears exactly once across the nine pools. */
+    int seen[MAX_SLOTS + 1] = {0};
+    for (size_t i = 0; i < sys->slot_count; i++) {
+        const ParkingSlot *slot = &sys->slots[i];
+        CHECK(slot->id >= 1 && slot->id <= MAX_SLOTS,
+              "slot id in valid range");
+        CHECK(seen[(size_t)slot->id] == 0,
+              "slot id appears exactly once");
+        seen[(size_t)slot->id] = 1;
+    }
+    for (int id = 1; id <= DEFAULT_SLOTS; id++) {
+        CHECK(seen[id] == 1, "every slot id appears exactly once");
+    }
+
+    parking_destroy(sys);
+}
+
+static void test_map_entry_exit_bay(void) {
+    ParkingSystem *sys = make_system();
+    add_vehicle(sys, "UP16AA0300", USER_STUDENT, "590000300");
+    time_t base = 1700000000;
+    Id slot_id = ID_NONE;
+    Receipt receipt;
+
+    CHECK(parking_section_type_occupied(sys, SECTION_STUDENT,
+                                        VEHICLE_CAR) == 0,
+          "student car section empty before entry");
+
+    CHECK(parking_enter(sys, "UP16AA0300", base, &slot_id) == PARKING_OK,
+          "student car entry succeeds");
+    CHECK(parking_section_type_occupied(sys, SECTION_STUDENT,
+                                        VEHICLE_CAR) == 1,
+          "student car section occupied after entry");
+
+    CHECK(parking_exit(sys, "UP16AA0300", base + 1800, &receipt) == PARKING_OK,
+          "student car exit succeeds");
+    CHECK(parking_section_type_occupied(sys, SECTION_STUDENT,
+                                        VEHICLE_CAR) == 0,
+          "student car section empty after exit");
+
+    parking_destroy(sys);
+}
+
+static void test_map_render_does_not_mutate(void) {
+    ParkingSystem *sys = make_system();
+    add_vehicle(sys, "UP16AA0400", USER_VISITOR, NULL);
+    time_t base = 1700000000;
+    Id slot_id = ID_NONE;
+
+    CHECK(parking_enter(sys, "UP16AA0400", base, &slot_id) == PARKING_OK,
+          "visitor entry succeeds");
+    size_t before_occupied = parking_occupied_slots(sys);
+    size_t before_active = parking_active_sessions(sys);
+
+    /* Rendering must not mutate parking state. */
+    view_campus_map(sys);
+
+    CHECK(parking_occupied_slots(sys) == before_occupied,
+          "occupancy unchanged after render");
+    CHECK(parking_active_sessions(sys) == before_active,
+          "active sessions unchanged after render");
+
+    parking_destroy(sys);
+}
+
 static void test_growth(void) {
     ParkingSystem *sys = make_system();
     char registration[32];
@@ -909,6 +987,9 @@ int main(void) {
     test_entry_and_exit();
     test_capacity();
     test_section_registered_count();
+    test_map_all_lots_sections();
+    test_map_entry_exit_bay();
+    test_map_render_does_not_mutate();
     test_bicycle_entry_exit_by_id();
     test_auto_save_registration();
     test_auto_save_entry_exit();
